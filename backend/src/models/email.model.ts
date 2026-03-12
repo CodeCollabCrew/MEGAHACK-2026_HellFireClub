@@ -1,6 +1,7 @@
 import mongoose, { Schema, Document } from "mongoose";
 
 export interface IEmail extends Document {
+  userId: string;
   emailId: string;
   from: string;
   subject: string;
@@ -18,7 +19,8 @@ export interface IEmail extends Document {
 
 const EmailSchema = new Schema<IEmail>(
   {
-    emailId: { type: String, required: true, unique: true },
+    userId: { type: String, required: true, index: true },
+    emailId: { type: String, required: true },
     from: { type: String, required: true },
     subject: { type: String, default: "(No Subject)" },
     body: { type: String, default: "" },
@@ -34,7 +36,8 @@ const EmailSchema = new Schema<IEmail>(
   { timestamps: true }
 );
 
-EmailSchema.index({ emailId: 1 });
+// Compound unique index: same emailId can exist for different users
+EmailSchema.index({ userId: 1, emailId: 1 }, { unique: true });
 EmailSchema.index({ receivedAt: -1 });
 EmailSchema.index({ isProcessed: 1 });
 

@@ -4,6 +4,7 @@ export type TaskPriority = "low" | "medium" | "high" | "urgent";
 export type TaskStage = "inbox" | "in_progress" | "review" | "done";
 
 export interface ITask extends Document {
+  userId: string;
   title: string;
   description: string;
   priority: TaskPriority;
@@ -23,6 +24,7 @@ export interface ITask extends Document {
 
 const TaskSchema = new Schema<ITask>(
   {
+    userId: { type: String, required: true, index: true },
     title: { type: String, required: true, trim: true, maxlength: 300 },
     description: { type: String, default: "" },
     priority: { type: String, enum: ["low", "medium", "high", "urgent"], default: "medium" },
@@ -40,7 +42,7 @@ const TaskSchema = new Schema<ITask>(
   { timestamps: true, toJSON: { virtuals: true } }
 );
 
-TaskSchema.index({ stage: 1, priority: 1 });
+TaskSchema.index({ userId: 1, stage: 1, priority: 1 });
 TaskSchema.index({ deadline: 1 });
 TaskSchema.index({ createdAt: -1 });
 

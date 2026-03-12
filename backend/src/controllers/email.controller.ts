@@ -2,44 +2,38 @@ import { Request, Response } from "express";
 import { Email } from "../models/email.model";
 import { Task } from "../models/task.model";
 import { extractTasksFromEmail } from "../services/ai.service";
-import { MOCK_EMAILS } from "../utils/mockData";
 import { sendSuccess, sendError } from "../utils/response";
 
-export const getAllEmails = async (_req: Request, res: Response) => {
+export const getAllEmails = async (req: Request, res: Response) => {
   try {
-    const emails = await Email.find().sort({ receivedAt: -1 }).limit(50);
+    const userId = req.query.userId as string;
+    if (!userId) return sendError(res, "userId required", 400);
+    const emails = await Email.find({ userId }).sort({ receivedAt: -1 }).limit(50);
     sendSuccess(res, emails);
   } catch (err) {
     sendError(res, "Failed to fetch emails");
   }
 };
 
-// Load mock emails into DB (for demo / when Gmail not configured)
-export const loadMockEmails = async (_req: Request, res: Response) => {
+export const loadMockEmails = async (req: Request, res: Response) => {
   try {
-    let loaded = 0;
-    for (const mock of MOCK_EMAILS) {
-      const exists = await Email.findOne({ emailId: mock.emailId });
-      if (!exists) {
-        await Email.create(mock);
-        loaded++;
-      }
-    }
-    sendSuccess(res, { message: `Loaded ${loaded} mock emails`, total: MOCK_EMAILS.length });
+    const userId = req.query.userId as string;
+    if (!userId) return sendError(res, "userId required", 400);
+    sendSuccess(res, { message: "Mock emails disabled in production", total: 0 });
   } catch (err) {
     sendError(res, "Failed to load mock emails");
   }
 };
 
-// Process a single email through AI extraction
 export const processEmail = async (req: Request, res: Response) => {
   try {
     const { emailId } = req.params;
-    const email = await Email.findOne({ emailId });
+    const userId = req.query.userId as string;
+    if (!userId) return sendError(res, "userId required", 400);
+
+    const email = await Email.findOne({ emailId, userId });
     if (!email) return sendError(res, "Email not found", 404);
-    if (email.isProcessed) {
-      return sendSuccess(res, { message: "Already processed", email });
-    }
+    if (email.isProcessed) return sendSuccess(res, { message: "Already processed", email });
 
     const result = await extractTasksFromEmail(email.subject, email.body, email.from);
 
@@ -47,6 +41,7 @@ export const processEmail = async (req: Request, res: Response) => {
     for (const extracted of result.tasks) {
       if (extracted.confidence >= 0.5) {
         const task = await Task.create({
+          userId,
           title: extracted.title,
           description: extracted.description,
           priority: extracted.priority,
@@ -70,20 +65,18 @@ export const processEmail = async (req: Request, res: Response) => {
     email.isRead = true;
     await email.save();
 
-    sendSuccess(res, {
-      email,
-      extraction: result,
-      createdTasks,
-    });
+    sendSuccess(res, { email, extraction: result, createdTasks });
   } catch (err) {
     sendError(res, "Failed to process email");
   }
 };
 
-// Process ALL unprocessed emails
-export const processAllEmails = async (_req: Request, res: Response) => {
+export const processAllEmails = async (req: Request, res: Response) => {
   try {
-    const unprocessed = await Email.find({ isProcessed: false });
+    const userId = req.query.userId as string;
+    if (!userId) return sendError(res, "userId required", 400);
+
+    const unprocessed = await Email.find({ userId, isProcessed: false });
     const results = [];
 
     for (const email of unprocessed) {
@@ -93,6 +86,7 @@ export const processAllEmails = async (_req: Request, res: Response) => {
       for (const extracted of result.tasks) {
         if (extracted.confidence >= 0.5) {
           const task = await Task.create({
+            userId,
             title: extracted.title,
             description: extracted.description,
             priority: extracted.priority,
@@ -116,7 +110,7 @@ export const processAllEmails = async (_req: Request, res: Response) => {
       await email.save();
 
       results.push({ emailId: email.emailId, subject: email.subject, tasksCreated: createdTasks.length });
-      await new Promise((r) => setTimeout(r, 300)); // Rate limit buffer
+      await new Promise((r) => setTimeout(r, 300));
     }
 
     sendSuccess(res, { processed: results.length, results });

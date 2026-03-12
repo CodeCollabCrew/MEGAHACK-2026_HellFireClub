@@ -6,6 +6,23 @@ const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
+// 🔹 Har request me userId automatically add karega
+api.interceptors.request.use((config) => {
+  if (typeof window !== "undefined") {
+    const userId = localStorage.getItem("userId");
+
+    if (userId) {
+      config.params = {
+        ...config.params,
+        userId,
+      };
+    }
+  }
+
+  return config;
+});
+
+// 🔹 Error logging
 api.interceptors.response.use(
   (r) => r,
   (err) => {
@@ -20,7 +37,8 @@ export const tasksApi = {
   getStats: () => api.get("/tasks/stats"),
   create: (data: object) => api.post("/tasks", data),
   update: (id: string, data: object) => api.put(`/tasks/${id}`, data),
-  updateStage: (id: string, stage: string) => api.patch(`/tasks/${id}/stage`, { stage }),
+  updateStage: (id: string, stage: string) =>
+    api.patch(`/tasks/${id}/stage`, { stage }),
   delete: (id: string) => api.delete(`/tasks/${id}`),
 };
 
