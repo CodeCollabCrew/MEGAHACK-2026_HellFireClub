@@ -1,78 +1,77 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api",
-  timeout: 30000,
-  headers: {
-    "Content-Type": "application/json",
-  },
+baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api",
+timeout: 30000,
+headers: {
+"Content-Type": "application/json",
+},
 });
 
-// ⭐ USERID AUTO ATTACH INTERCEPTOR
+// ⭐ Automatically attach userId to every request
 api.interceptors.request.use((config) => {
-  try {
-    if (typeof window !== "undefined") {
-      const userId = localStorage.getItem("userId");
+if (typeof window !== "undefined") {
+const userId = localStorage.getItem("userId");
 
-      if (userId) {
-        config.params = {
-          ...(config.params || {}),
-          userId: userId,
-        };
-      }
-    }
-  } catch (error) {
-    console.warn("UserId attach error:", error);
-  }
+```
+if (userId) {
+  config.params = {
+    ...(config.params || {}),
+    userId: userId,
+  };
+}
+```
 
-  return config;
+}
+
+return config;
 });
 
-// ⭐ RESPONSE ERROR LOGGER
+// ⭐ Error logging
 api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    console.error("API Error:", error.response?.data || error.message);
-    return Promise.reject(error);
-  }
+(response) => response,
+(error) => {
+console.error("API Error:", error.response?.data || error.message);
+return Promise.reject(error);
+}
 );
 
 // ---------------- TASKS ----------------
 export const tasksApi = {
-  getAll: () => api.get("/tasks"),
+getAll: () => api.get("/tasks"),
 
-  getStats: () => api.get("/tasks/stats"),
+getStats: () => api.get("/tasks/stats"),
 
-  create: (data: object) => api.post("/tasks", data),
+create: (data: object) => api.post("/tasks", data),
 
-  update: (id: string, data: object) => api.put(`/tasks/${id}`, data),
+update: (id: string, data: object) => api.put(`/tasks/${id}`, data),
 
-  updateStage: (id: string, stage: string) =>
-    api.patch(`/tasks/${id}/stage`, { stage }),
+updateStage: (id: string, stage: string) =>
+api.patch(`/tasks/${id}/stage`, { stage }),
 
-  delete: (id: string) => api.delete(`/tasks/${id}`),
+delete: (id: string) => api.delete(`/tasks/${id}`),
 };
 
 // ---------------- EMAILS ----------------
 export const emailsApi = {
-  getAll: () => api.get("/emails"),
+getAll: () => api.get("/emails"),
 
-  loadMock: () => api.post("/emails/mock"),
+loadMock: () => api.post("/emails/mock"),
 
-  processOne: (emailId: string) =>
-    api.post(`/emails/${emailId}/process`),
+processOne: (emailId: string) =>
+api.post(`/emails/${emailId}/process`),
 
-  processAll: () => api.post("/emails/process-all"),
+processAll: () => api.post("/emails/process-all"),
 };
 
 // ---------------- PIPELINE ----------------
 export const pipelineApi = {
-  get: () => api.get("/pipeline"),
+get: () => api.get("/pipeline"),
 };
 
 // ---------------- INSIGHTS ----------------
 export const insightsApi = {
-  get: () => api.get("/insights"),
+get: () => api.get("/insights"),
 };
 
 export default api;
