@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Sun, Moon } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
 import { authApi, saveToken } from "@/lib/api";
 
-export default function LoginPage() {
+function LoginInner() {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const { theme, toggle } = useTheme();
@@ -196,5 +196,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: "40px", textAlign: "center" }}>Loading…</div>}>
+      <LoginInner />
+    </Suspense>
   );
 }
