@@ -1,8 +1,12 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, AlertTriangle, ChevronRight, LogIn } from "lucide-react";
+import { 
+  Plus, AlertTriangle, ChevronRight, LogIn, 
+  Zap, Database, Globe, RefreshCw, Lock 
+} from "lucide-react";
 import axios from "axios";
+import toast from "react-hot-toast";
 
 import { useTasks }    from "@/hooks/useTasks";
 import { useEmails }   from "@/hooks/useEmails";
@@ -42,6 +46,12 @@ export default function DashboardPage() {
   const [booting, setBooting]     = useState(true);
   const [user, setUser]           = useState<{name:string;email:string}|null>(null);
   const [sentMails, setSentMails] = useState<any[]>([]);
+  const [sysStats, setSysStats] = useState({
+    dbStatus: "Connected",
+    apiLatency: "...",
+    uptime: "...",
+    activeSessions: 0
+  });
 
   const { tasks, stats, loading:tLoad, fetchTasks, moveTask }                                      = useTasks();
   const { emails, processingEmailId, processingAll, lastResult, setLastResult, fetchEmails, processOne, processAll } = useEmails();
@@ -57,12 +67,22 @@ export default function DashboardPage() {
     } catch {}
   }, []);
 
+  const fetchHealth = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API}/admin/health`);
+      if (res.data.success) {
+        setSysStats(res.data.data);
+      }
+    } catch (e) {
+      console.error("Health sync failed", e);
+    }
+  }, []);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const userParam = params.get("user");
     if (userParam) {
       localStorage.setItem("userId", userParam);
-      // Also update axon_user if it doesn't exist to prevent login screen
       if (!localStorage.getItem("axon_user")) {
         localStorage.setItem("axon_user", JSON.stringify({ name: userParam.split('@')[0], email: userParam }));
       }
@@ -70,18 +90,18 @@ export default function DashboardPage() {
 
     const s = localStorage.getItem("axon_user");
     if (s) setUser(JSON.parse(s));
-    Promise.all([fetchTasks(), fetchEmails()]).finally(() => setBooting(false));
-  }, [fetchTasks, fetchEmails]);
+    Promise.all([fetchTasks(), fetchEmails(), fetchHealth()]).finally(() => setBooting(false));
+  }, [fetchTasks, fetchEmails, fetchHealth]);
 
   useEffect(() => {
     if (tab === "pipeline") fetchPipeline();
     if (tab === "insights") fetchInsights();
     if (tab === "emails")   fetchSentMails();
-  }, [tab]);
+  }, [tab, fetchPipeline, fetchInsights, fetchSentMails]);
 
   useEffect(() => {
     if (emailTab === "sent") fetchSentMails();
-  }, [emailTab]);
+  }, [emailTab, fetchSentMails]);
 
   const handleProcessEmail = async (email: Email) => {
     const r = await processOne(email);
@@ -140,6 +160,34 @@ export default function DashboardPage() {
                   </button>
                 </div>
               )}
+
+              {/* Infrastructure Health Section */}
+              <div className="card" style={{ padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", marginBottom: "20px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+                  <h3 style={{ fontSize: "14px", fontWeight: 600, color: "var(--text)", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <Zap size={14} color="var(--punch)" /> Infrastructure Health
+                  </h3>
+                  <button onClick={fetchHealth} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-3)", display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", fontFamily: "'Space Mono',monospace" }}>
+                    <RefreshCw size={10} /> Sync
+                  </button>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" }} className="four-col">
+                  {[
+                    { label: "Database", value: sysStats.dbStatus, icon: Database },
+                    { label: "Latency", value: sysStats.apiLatency, icon: RefreshCw },
+                    { label: "Uptime", value: sysStats.uptime, icon: Globe },
+                    { label: "Sessions", value: sysStats.activeSessions, icon: Lock },
+                  ].map((s, i) => (
+                    <div key={i} style={{ padding: "10px", background: "var(--surface)", borderRadius: "6px", display: "flex", alignItems: "center", gap: "10px" }}>
+                      <s.icon size={12} color="var(--text-3)" />
+                      <div>
+                        <p style={{ fontSize: "10px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.02em" }}>{s.label}</p>
+                        <p style={{ fontSize: "12px", fontWeight: 600, color: s.label === "Database" ? "var(--green)" : "var(--text)" }}>{s.value}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
               <StatsBar stats={stats} overdueTasks={overdue} />
 

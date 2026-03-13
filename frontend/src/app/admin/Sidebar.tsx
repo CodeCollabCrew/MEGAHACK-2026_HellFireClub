@@ -1,16 +1,15 @@
 "use client";
 import { useRouter, usePathname } from "next/navigation";
 import {
-    LayoutDashboard, Users, Building2, Activity, Settings,
-    Shield, ChevronLeft
+    Shield, ChevronLeft, Activity as ActivityIcon,
+    LayoutDashboard, Users, Building2
 } from "lucide-react";
 
 const NAV = [
     { href: "/admin", icon: LayoutDashboard, label: "Dashboard" },
     { href: "/admin/users", icon: Users, label: "Users" },
     { href: "/admin/workspaces", icon: Building2, label: "Workspaces" },
-    { href: "/admin/activity-logs", icon: Activity, label: "Activity Logs" },
-    { href: "/admin/settings", icon: Settings, label: "Settings" },
+    { href: "/admin/activity-logs", icon: ActivityIcon, label: "Activity Logs" },
 ];
 
 export default function Sidebar() {
