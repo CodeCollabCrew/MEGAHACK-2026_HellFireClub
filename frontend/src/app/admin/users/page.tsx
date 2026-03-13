@@ -1,9 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { Plus, Search, Edit2, Trash2, Download, ChevronDown, X, Check, Loader2, RefreshCw } from "lucide-react";
-
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
-const API = BASE_URL.replace(/\/+$/, "").endsWith("/api") ? BASE_URL.replace(/\/+$/, "") : `${BASE_URL.replace(/\/+$/, "")}/api`;
+import api from "@/lib/api";
 const AVATAR_COLORS = ["#1B4FD8", "#1A7A4A", "#7C3AED", "#E65100", "#00838F", "#C2185B"];
 
 export default function AdminUsers() {
@@ -23,11 +21,15 @@ export default function AdminUsers() {
     const fetchUsers = async (isRefresh = false) => {
         if (isRefresh) setRefreshing(true);
         try {
-            const res = await fetch(`${API}/auth/users`);
-            const data = await res.json();
+            const res = await api.get("/api/auth/users");
+            const data = res.data;
             if (data.success) setUsers(data.data);
-        } catch (e) { console.error(e); }
-        finally { setLoading(false); setRefreshing(false); }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
     };
 
     useEffect(() => { fetchUsers(); }, []);
@@ -42,18 +44,24 @@ export default function AdminUsers() {
     const cycleStatus = async (user: any) => {
         const newStatus = user.status === "active" ? "inactive" : "active";
         try {
-            const res = await fetch(`${API}/auth/users/${user._id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: newStatus }) });
-            const data = await res.json();
-            if (data.success) setUsers(us => us.map(u => u._id === user._id ? { ...u, status: newStatus } : u));
-        } catch (e) { console.error(e); }
+            const res = await api.patch(`/api/auth/users/${user._id}`, { status: newStatus });
+            const data = res.data;
+            if (data.success) {
+                setUsers(us => us.map(u => u._id === user._id ? data.data : u));
+            }
+        } catch (e) {
+            console.error(e);
+        }
     };
 
     const deleteUser = async (id: string) => {
         if (!confirm("Delete this user?")) return;
         try {
-            await fetch(`${API}/auth/users/${id}`, { method: "DELETE" });
+            await api.delete(`/api/auth/users/${id}`);
             setUsers(us => us.filter(u => u._id !== id));
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error(e);
+        }
     };
 
     const openAdd = () => { setEditUser(null); setForm({ name: "", email: "", password: "", role: "user" }); setFormError(""); setModal(true); };
@@ -61,23 +69,40 @@ export default function AdminUsers() {
 
     const handleSave = async () => {
         if (!form.name || !form.email) { setFormError("Name and email are required."); return; }
-        setSaving(true); setFormError("");
+        setSaving(true);
+        setFormError("");
         try {
             if (editUser) {
                 const body: any = { name: form.name, role: form.role };
-                const res = await fetch(`${API}/auth/users/${editUser._id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-                const data = await res.json();
-                if (data.success) { setUsers(us => us.map(u => u._id === editUser._id ? data.data : u)); setModal(false); }
-                else setFormError(data.message || "Update failed");
+                const res = await api.patch(`/api/auth/users/${editUser._id}`, body);
+                const data = res.data;
+                if (data.success) {
+                    setUsers(us => us.map(u => (u._id === editUser._id ? data.data : u)));
+                    setModal(false);
+                } else {
+                    setFormError(data.error || "Update failed");
+                }
             } else {
-                if (!form.password) { setFormError("Password is required for new users."); setSaving(false); return; }
-                const res = await fetch(`${API}/auth/users`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
-                const data = await res.json();
-                if (data.success) { fetchUsers(); setModal(false); }
-                else setFormError(data.message || "Creation failed");
+                if (!form.password) {
+                    setFormError("Password is required for new users.");
+                    setSaving(false);
+                    return;
+                }
+                const res = await api.post("/api/auth/users", form);
+                const data = res.data;
+                if (data.success) {
+                    fetchUsers();
+                    setModal(false);
+                } else {
+                    setFormError(data.error || "Creation failed");
+                }
             }
-        } catch (e) { setFormError("Server error. Try again."); }
-        finally { setSaving(false); }
+        } catch (e: any) {
+            const msg = e.response?.data?.error || "Server error. Try again.";
+            setFormError(msg);
+        } finally {
+            setSaving(false);
+        }
     };
 
     if (loading) return (
@@ -262,4 +287,4 @@ export default function AdminUsers() {
             )}
         </div>
     );
-}
+}

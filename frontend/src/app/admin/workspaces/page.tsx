@@ -1,9 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { Plus, Search, Trash2, Megaphone, Code2, Headphones, BarChart3, FileText, Globe, X, Check, ArrowLeft, Loader2, CheckSquare, Clock, Eye } from "lucide-react";
-
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
-const API = BASE_URL.replace(/\/+$/, "").endsWith("/api") ? BASE_URL.replace(/\/+$/, "") : `${BASE_URL.replace(/\/+$/, "")}/api`;
+import api from "@/lib/api";
 
 const ICONS = [Megaphone, Code2, Headphones, BarChart3, FileText, Globe];
 const ICON_STYLES = [
@@ -30,11 +28,11 @@ export default function AdminWorkspaces() {
     const fetchAll = async () => {
         try {
             const [wsRes, taskRes] = await Promise.all([
-                fetch(`${API}/workspaces`),
-                fetch(`${API}/tasks`),
+                api.get("/api/workspaces"),
+                api.get("/api/tasks"),
             ]);
-            const wsData = await wsRes.json();
-            const taskData = await taskRes.json();
+            const wsData = wsRes.data;
+            const taskData = taskRes.data;
             if (wsData.success) setWorkspaces(wsData.data);
             const tasks = taskData.data || taskData.tasks || [];
             setAllTasks(tasks);
@@ -51,20 +49,19 @@ export default function AdminWorkspaces() {
         if (!form.name.trim()) { setFormError("Workspace name is required."); return; }
         setSaving(true); setFormError("");
         try {
-            const res = await fetch(`${API}/workspaces`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(form),
-            });
-            const data = await res.json();
+            const res = await api.post("/api/workspaces", form);
+            const data = res.data;
             if (data.success) {
                 setWorkspaces(ws => [data.data, ...ws]);
                 setModal(false);
                 setForm({ name: "", description: "", owner: "" });
             } else {
-                setFormError(data.message || "Failed to create workspace");
+                setFormError(data.error || "Failed to create workspace");
             }
-        } catch (e) { setFormError("Server error. Try again."); }
+        } catch (e: any) {
+            const msg = e.response?.data?.error || "Server error. Try again.";
+            setFormError(msg);
+        }
         finally { setSaving(false); }
     };
 
@@ -72,10 +69,12 @@ export default function AdminWorkspaces() {
         e.stopPropagation();
         if (!confirm("Delete this workspace?")) return;
         try {
-            await fetch(`${API}/workspaces/${id}`, { method: "DELETE" });
+            await api.delete(`/api/workspaces/${id}`);
             setWorkspaces(ws => ws.filter(w => w._id !== id));
             if (selected?._id === id) setSelected(null);
-        } catch (e) { console.error(e); }
+        } catch (e) {
+            console.error(e);
+        }
     };
 
     const filtered = workspaces.filter(w =>
