@@ -1,7 +1,8 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, AlertTriangle, ChevronRight, LogIn } from "lucide-react";
+import axios from "axios";
 
 import { useTasks }    from "@/hooks/useTasks";
 import { useEmails }   from "@/hooks/useEmails";
@@ -16,6 +17,7 @@ import RecentTasksList    from "@/components/dashboard/RecentTasksList";
 import EmailList          from "@/components/email/EmailList";
 import EmailViewer        from "@/components/email/EmailViewer";
 import ExtractionPanel    from "@/components/email/ExtractionPanel";
+import SentMailsList      from "@/components/email/SentMailsList";
 import KanbanBoard        from "@/components/pipeline/KanbanBoard";
 import PriorityChart      from "@/components/insights/PriorityChart";
 import WeeklyTrendChart   from "@/components/insights/WeeklyTrendChart";
@@ -25,20 +27,34 @@ import { FullPageLoader } from "@/components/ui/Spinner";
 import { Email }          from "@/types";
 import { isOverdue }      from "@/lib/utils";
 
-type Tab = "dashboard"|"emails"|"pipeline"|"insights";
+const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").replace(/\/$/, "");
+
+type Tab      = "dashboard"|"emails"|"pipeline"|"insights";
+type EmailTab = "inbox"|"sent";
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [tab, setTab]           = useState<Tab>("dashboard");
-  const [modal, setModal]       = useState(false);
-  const [selEmail, setSelEmail] = useState<Email|null>(null);
-  const [booting, setBooting]   = useState(true);
-  const [user, setUser]         = useState<{name:string;email:string}|null>(null);
+  const [tab, setTab]             = useState<Tab>("dashboard");
+  const [emailTab, setEmailTab]   = useState<EmailTab>("inbox");
+  const [modal, setModal]         = useState(false);
+  const [selEmail, setSelEmail]   = useState<Email|null>(null);
+  const [booting, setBooting]     = useState(true);
+  const [user, setUser]           = useState<{name:string;email:string}|null>(null);
+  const [sentMails, setSentMails] = useState<any[]>([]);
 
   const { tasks, stats, loading:tLoad, fetchTasks, moveTask }                                      = useTasks();
   const { emails, processingEmailId, processingAll, lastResult, setLastResult, fetchEmails, processOne, processAll } = useEmails();
   const { pipeline, loading:pLoad, fetchPipeline, moveTask:movePipeTask, deleteTask:delPipeTask }  = usePipeline();
   const { insights, loading:iLoad, fetchInsights }                                                 = useInsights();
+
+  const fetchSentMails = useCallback(async () => {
+    const userId = localStorage.getItem("userId");
+    if (!userId) return;
+    try {
+      const res = await axios.get(`${API}/api/gmail/sent`, { params: { userId } });
+      setSentMails(res.data.data || []);
+    } catch {}
+  }, []);
 
   useEffect(() => {
     const s = localStorage.getItem("axon_user");
@@ -47,13 +63,23 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (tab==="pipeline") fetchPipeline();
-    if (tab==="insights") fetchInsights();
+    if (tab === "pipeline") fetchPipeline();
+    if (tab === "insights") fetchInsights();
+    if (tab === "emails")   fetchSentMails();
   }, [tab]);
+
+  useEffect(() => {
+    if (emailTab === "sent") fetchSentMails();
+  }, [emailTab]);
 
   const handleProcessEmail = async (email: Email) => {
     const r = await processOne(email);
     if (r) { setSelEmail(email); fetchTasks(); }
+  };
+
+  const selectEmail = (email: Email) => {
+    setSelEmail(email);
+    setLastResult(null);
   };
 
   const unread      = emails.filter(e=>!e.isRead).length;
@@ -74,6 +100,8 @@ export default function DashboardPage() {
           .four-col  { grid-template-columns: 1fr 1fr !important; }
           .email-grid{ grid-template-columns: 1fr !important; }
         }
+        .email-subtab { background:none; border:none; cursor:pointer; padding:6px 14px; font-size:12px; font-family:'Space Mono',monospace; border-bottom:2px solid transparent; color:var(--text-3); transition:all 0.15s; }
+        .email-subtab.active { color:var(--punch); border-bottom-color:var(--punch); }
       `}</style>
 
       <div style={{ display:"flex", minHeight:"100vh", background:"var(--bg)" }}>
@@ -82,9 +110,9 @@ export default function DashboardPage() {
 
         <main className="dash-main" style={{ flex:1, minHeight:"100vh" }}>
 
-          {/* ══ OVERVIEW ══ */}
+          {/* OVERVIEW */}
           {tab==="dashboard" && (
-            <div style={{ padding:"28px 28px", maxWidth:"920px" }} className="anim-up">
+            <div style={{ padding:"28px", maxWidth:"920px" }} className="anim-up">
               <Header title="Overview"
                 subtitle={urgentTasks.length ? `${urgentTasks.length} urgent · ${overdue.length} overdue` : "All clear ✓"}
                 onRefresh={()=>Promise.all([fetchTasks(),fetchEmails()])} refreshing={tLoad} />
@@ -145,7 +173,8 @@ export default function DashboardPage() {
                       <p style={{ padding:"20px", textAlign:"center", fontSize:"12px", color:"var(--text-3)" }}>Connect Gmail to see emails →</p>
                     )}
                     {emails.slice(0,6).map(email=>(
-                      <div key={email._id} onClick={()=>{setSelEmail(email);setTab("emails");}}
+                      <div key={email._id}
+                        onClick={()=>{ selectEmail(email); setTab("emails"); }}
                         style={{ display:"flex", alignItems:"center", gap:"10px", padding:"8px", borderRadius:"3px", cursor:"pointer" }}
                         onMouseEnter={e=>(e.currentTarget.style.background="var(--surface)")}
                         onMouseLeave={e=>(e.currentTarget.style.background="transparent")}>
@@ -165,25 +194,61 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* ══ EMAILS ══ */}
+          {/* EMAILS */}
           {tab==="emails" && (
             <div style={{ padding:"28px" }} className="anim-up">
-              <Header title="Inbox" subtitle={`${unprocessed} unprocessed · ${emails.length} total`} onRefresh={fetchEmails}/>
-              <div style={{ display:"grid", gridTemplateColumns:"2fr 3fr", gap:"16px" }} className="email-grid">
-                <div style={{ maxHeight:"calc(100vh - 130px)", overflowY:"auto", paddingRight:"4px" }}>
-                  <EmailList emails={emails} selectedEmail={selEmail} onSelect={setSelEmail} onProcess={handleProcessEmail} processingEmailId={processingEmailId}/>
-                </div>
+              <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:"20px" }}>
                 <div>
-                  {lastResult
-                    ? <ExtractionPanel result={lastResult} onClose={()=>setLastResult(null)}/>
-                    : <EmailViewer email={selEmail} onProcess={handleProcessEmail} processingEmailId={processingEmailId}/>
-                  }
+                  <h1 style={{ fontSize:"28px", fontFamily:"'Instrument Serif',serif", color:"var(--text)" }}>
+                    {emailTab === "inbox" ? "Inbox" : "Sent"}
+                  </h1>
+                  <p style={{ fontSize:"13px", color:"var(--text-3)", marginTop:"2px" }}>
+                    {emailTab === "inbox"
+                      ? `${unprocessed} unprocessed · ${emails.length} total`
+                      : `${sentMails.length} sent`}
+                  </p>
+                </div>
+                <div style={{ display:"flex", alignItems:"center", gap:"0" }}>
+                  <button className={`email-subtab ${emailTab==="inbox"?"active":""}`} onClick={()=>setEmailTab("inbox")}>Inbox</button>
+                  <button className={`email-subtab ${emailTab==="sent"?"active":""}`} onClick={()=>setEmailTab("sent")}>
+                    Sent {sentMails.length > 0 && `(${sentMails.length})`}
+                  </button>
+                  <button
+                    onClick={emailTab==="inbox" ? fetchEmails : fetchSentMails}
+                    style={{ marginLeft:"12px", display:"flex", alignItems:"center", gap:"5px", padding:"6px 12px", fontSize:"12px", background:"none", border:"1px solid var(--border)", borderRadius:"3px", cursor:"pointer", color:"var(--text-3)" }}>
+                    Refresh
+                  </button>
                 </div>
               </div>
+
+              {emailTab === "inbox" && (
+                <div style={{ display:"grid", gridTemplateColumns:"2fr 3fr", gap:"16px" }} className="email-grid">
+                  <div style={{ maxHeight:"calc(100vh - 180px)", overflowY:"auto", paddingRight:"4px" }}>
+                    <EmailList emails={emails} selectedEmail={selEmail}
+                      onSelect={selectEmail}
+                      onProcess={handleProcessEmail} processingEmailId={processingEmailId}/>
+                  </div>
+                  <div>
+                    {lastResult
+                      ? <ExtractionPanel result={lastResult} onClose={()=>setLastResult(null)}/>
+                      : <EmailViewer
+                          email={selEmail}
+                          onProcess={handleProcessEmail}
+                          processingEmailId={processingEmailId}
+                          onFollowUpSent={fetchSentMails}
+                        />
+                    }
+                  </div>
+                </div>
+              )}
+
+              {emailTab === "sent" && (
+                <SentMailsList mails={sentMails} />
+              )}
             </div>
           )}
 
-          {/* ══ PIPELINE ══ */}
+          {/* PIPELINE */}
           {tab==="pipeline" && (
             <div style={{ padding:"28px" }} className="anim-up">
               <Header title="Pipeline" subtitle={`${tasks.length} tasks · ${overdue.length} overdue`} onRefresh={fetchPipeline} refreshing={pLoad}
@@ -192,7 +257,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* ══ INSIGHTS ══ */}
+          {/* INSIGHTS */}
           {tab==="insights" && (
             <div style={{ padding:"28px", maxWidth:"960px" }} className="anim-up">
               <Header title="Insights" subtitle="AI-powered analytics" onRefresh={fetchInsights} refreshing={iLoad}/>
@@ -208,7 +273,7 @@ export default function DashboardPage() {
                     <div style={{ fontFamily:"'Space Mono',monospace", fontSize:"10px", color:"var(--text-3)", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:"14px" }}>Pipeline</div>
                     <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:"10px" }} className="four-col">
                       {[["inbox","Inbox","var(--text-3)"],["in_progress","In Progress","var(--blue)"],["review","Review","var(--yellow)"],["done","Done","var(--green)"]].map(([id,lbl,c])=>{
-                        const cnt = insights.tasksByStage.find(s=>s._id===id)?.count??0;
+                        const cnt = insights.tasksByStage.find((s:any)=>s._id===id)?.count??0;
                         return (
                           <div key={id} className="card" style={{ padding:"14px", textAlign:"center" }}>
                             <div style={{ fontFamily:"'Instrument Serif',Georgia,serif", fontSize:"32px", color:c }}>{cnt}</div>

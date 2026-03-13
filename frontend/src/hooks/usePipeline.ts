@@ -1,7 +1,7 @@
 "use client";
 import { useState, useCallback } from "react";
 import { PipelineData, TaskStage } from "@/types";
-import { pipelineApi, tasksApi } from "@/lib/api";
+import { pipelineApi } from "@/lib/api";
 import toast from "react-hot-toast";
 
 export function usePipeline() {
@@ -22,7 +22,7 @@ export function usePipeline() {
 
   const moveTask = useCallback(async (taskId: string, stage: TaskStage) => {
     try {
-      await tasksApi.updateStage(taskId, stage);
+      await pipelineApi.moveTask(taskId, { stage });
       await fetchPipeline();
       toast.success("Task moved!");
     } catch {
@@ -32,7 +32,7 @@ export function usePipeline() {
 
   const deleteTask = useCallback(async (taskId: string) => {
     try {
-      await tasksApi.delete(taskId);
+      await pipelineApi.deleteTask(taskId);
       await fetchPipeline();
       toast.success("Task deleted");
     } catch {

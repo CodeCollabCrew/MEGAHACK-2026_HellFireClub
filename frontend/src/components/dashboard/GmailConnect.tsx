@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { Mail, CheckCircle2, Loader2, AlertCircle } from "lucide-react";
 import axios from "axios";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").replace(/\/$/, "");
 
 export default function GmailConnect({ onImported }: { onImported: () => void }) {
   const [status, setStatus] = useState<"idle"|"loading"|"connected"|"error">("idle");
@@ -11,7 +11,9 @@ export default function GmailConnect({ onImported }: { onImported: () => void })
   const [configured, setConfigured] = useState(false);
 
   useEffect(() => {
-    axios.get(`${API}/gmail/auth-url`).then(r => setConfigured(r.data.data.configured)).catch(() => {});
+    axios.get(`${API}/api/gmail/auth-url`)  // ← fixed
+      .then(r => setConfigured(r.data.data.configured))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -39,7 +41,7 @@ export default function GmailConnect({ onImported }: { onImported: () => void })
       <button onClick={async () => {
         setStatus("loading");
         try {
-          const r = await axios.get(`${API}/gmail/auth-url`);
+          const r = await axios.get(`${API}/api/gmail/auth-url`);  // ← fixed
           if (r.data.data.url) window.location.href = r.data.data.url;
           else { setStatus("error"); setMsg("Not configured"); }
         } catch { setStatus("error"); setMsg("Backend unreachable"); }
