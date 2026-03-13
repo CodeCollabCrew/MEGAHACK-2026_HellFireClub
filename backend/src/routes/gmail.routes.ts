@@ -20,22 +20,37 @@ function getRedirectUri() {
 }
 
 // Step 1: Redirect to Google consent
-router.get("/connect", (_req: Request, res: Response) => {
+router.get("/connect", (req: Request, res: Response) => {
   const clientId = process.env.GOOGLE_CLIENT_ID;
+  const role = req.query.role as string || "user";
   if (!clientId) return sendError(res, "GOOGLE_CLIENT_ID not set in .env", 500);
+
+  const state = JSON.stringify({ role });
   const url = `${GOOGLE_AUTH_URL}?` + new URLSearchParams({
     client_id: clientId, redirect_uri: getRedirectUri(),
     response_type: "code", access_type: "offline", prompt: "consent",
     scope: SCOPES,
+    state: state
   });
   res.redirect(url);
 });
 
 // Step 2: OAuth callback
 router.get("/callback", async (req: Request, res: Response) => {
-  const { code, error } = req.query;
+  const { code, error, state } = req.query;
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
-  if (error || !code) return res.redirect(`${frontendUrl}/dashboard?gmail_error=access_denied`);
+
+  let role = "user";
+  if (state) {
+    try {
+      const parsed = JSON.parse(state as string);
+      role = parsed.role || "user";
+    } catch {}
+  }
+
+  const redirectBase = role === "admin" ? `${frontendUrl}/admin` : `${frontendUrl}/dashboard`;
+
+  if (error || !code) return res.redirect(`${redirectBase}?gmail_error=access_denied`);
 
   try {
     const tokenRes = await fetch(GOOGLE_TOKEN_URL, {
@@ -74,21 +89,25 @@ router.get("/callback", async (req: Request, res: Response) => {
     const result = await fetchGmailEmails(tokens.access_token, userId, 30);
     console.log(`Gmail fetch for ${userId}: imported ${result.imported}, errors: ${result.errors.length}`);
 
-    res.redirect(`${frontendUrl}/dashboard?gmail_success=true&imported=${result.imported}&user=${encodeURIComponent(userId)}`);
+    res.redirect(`${redirectBase}?gmail_success=true&imported=${result.imported}&user=${encodeURIComponent(userId)}`);
   } catch (err) {
     console.error("Gmail callback error:", err);
-    res.redirect(`${frontendUrl}/dashboard?gmail_error=server_error`);
+    res.redirect(`${redirectBase}?gmail_error=server_error`);
   }
 });
 
 // Get OAuth URL
-router.get("/auth-url", (_req: Request, res: Response) => {
+router.get("/auth-url", (req: Request, res: Response) => {
   const clientId = process.env.GOOGLE_CLIENT_ID;
+  const role = req.query.role as string || "user";
   if (!clientId) return sendSuccess(res, { url: null, configured: false });
+
+  const state = JSON.stringify({ role });
   const url = `${GOOGLE_AUTH_URL}?` + new URLSearchParams({
     client_id: clientId, redirect_uri: getRedirectUri(),
     response_type: "code", access_type: "offline", prompt: "consent",
     scope: SCOPES,
+    state: state
   });
   sendSuccess(res, { url, configured: true });
 });
@@ -102,14 +121,22 @@ router.post("/draft-followup", async (req: Request, res: Response) => {
     const email = await Email.findOne({ emailId, userId });
     if (!email) return sendError(res, "Email not found", 404);
 
-    const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const apiKey = process.env.GROQ_API_KEY || "";
+    const isXAI = apiKey.startsWith("xai-");
+    const endpoint = isXAI 
+      ? "https://api.x.ai/v1/chat/completions" 
+      : "https://api.groq.com/openai/v1/chat/completions";
+    
+    const model = isXAI ? "grok-beta" : "llama3-8b-8192";
+
+    const groqRes = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "llama3-8b-8192",
+        model: model,
         messages: [
           {
             role: "system",

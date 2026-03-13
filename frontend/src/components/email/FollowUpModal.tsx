@@ -4,7 +4,8 @@ import { X, Send, Loader2, Zap, RefreshCw } from "lucide-react";
 import axios from "axios";
 import toast from "react-hot-toast";
 
-const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").replace(/\/$/, "");
+const BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").replace(/\/+$/, "");
+const API = BASE_URL.endsWith("/api") ? BASE_URL : `${BASE_URL}/api`;
 
 interface Props {
   email: { emailId: string; from: string; subject: string } | null;
@@ -30,7 +31,7 @@ export default function FollowUpModal({ email, onClose, onSent }: Props) {
     setStep("drafting");
     setBody("");
     try {
-      const res = await axios.post(`${API}/api/gmail/draft-followup`, {
+      const res = await axios.post(`${API}/gmail/draft-followup`, {
         emailId: email.emailId,
         userId,
       });
@@ -70,7 +71,7 @@ export default function FollowUpModal({ email, onClose, onSent }: Props) {
     if (!body.trim()) { toast.error("Message cannot be empty"); return; }
     setStep("sending");
     try {
-      await axios.post(`${API}/api/gmail/send-followup`, {
+      await axios.post(`${API}/gmail/send-followup`, {
         userId, emailId: email.emailId, to, subject, body,
       });
       toast.success("Follow-up sent!");

@@ -27,7 +27,8 @@ import { FullPageLoader } from "@/components/ui/Spinner";
 import { Email }          from "@/types";
 import { isOverdue }      from "@/lib/utils";
 
-const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").replace(/\/$/, "");
+const BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").replace(/\/+$/, "");
+const API = BASE_URL.endsWith("/api") ? BASE_URL : `${BASE_URL}/api`;
 
 type Tab      = "dashboard"|"emails"|"pipeline"|"insights";
 type EmailTab = "inbox"|"sent";
@@ -51,16 +52,26 @@ export default function DashboardPage() {
     const userId = localStorage.getItem("userId");
     if (!userId) return;
     try {
-      const res = await axios.get(`${API}/api/gmail/sent`, { params: { userId } });
+      const res = await axios.get(`${API}/gmail/sent`, { params: { userId } });
       setSentMails(res.data.data || []);
     } catch {}
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const userParam = params.get("user");
+    if (userParam) {
+      localStorage.setItem("userId", userParam);
+      // Also update axon_user if it doesn't exist to prevent login screen
+      if (!localStorage.getItem("axon_user")) {
+        localStorage.setItem("axon_user", JSON.stringify({ name: userParam.split('@')[0], email: userParam }));
+      }
+    }
+
     const s = localStorage.getItem("axon_user");
     if (s) setUser(JSON.parse(s));
     Promise.all([fetchTasks(), fetchEmails()]).finally(() => setBooting(false));
-  }, []);
+  }, [fetchTasks, fetchEmails]);
 
   useEffect(() => {
     if (tab === "pipeline") fetchPipeline();

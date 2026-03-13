@@ -1,7 +1,13 @@
 import axios from "axios";
 
+const getBaseURL = () => {
+  const url = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").replace(/\/+$/, "");
+  // If the user provided a URL ending in /api, strip it because the endpoints below already include /api/
+  return url.endsWith("/api") ? url.slice(0, -4) : url;
+};
+
 const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL,
+  baseURL: getBaseURL(),
   timeout: 30000,
   headers: {
     "Content-Type": "application/json",

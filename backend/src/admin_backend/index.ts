@@ -26,14 +26,14 @@ const PORT = process.env.PORT || 5000;
 // ─── Security ─────────────────────────────────────────────────────────────────
 app.use(helmet());
 app.use(cors({
-  origin: [
-    process.env.FRONTEND_URL || "http://localhost:3000",
-    /\.vercel\.app$/,  // Allow all Vercel preview deployments
-  ],
-  credentials: true,
+    origin: [
+        process.env.FRONTEND_URL || "http://localhost:3000",
+        /\.vercel\.app$/,  // Allow all Vercel preview deployments
+    ],
+    credentials: true,
 }));
 
-const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 2000 }); // Increased for development
+const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 200 });
 app.use("/api", limiter);
 
 // ─── Middleware ────────────────────────────────────────────────────────────────
@@ -61,17 +61,17 @@ app.use(errorHandler);
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 const startServer = async () => {
-  await connectDB();
-  app.listen(PORT, () => {
-    console.log(`🚀 API running on port ${PORT}`);
-    console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
-  });
-  startFollowUpCron();
+    await connectDB();
+    app.listen(PORT, () => {
+        console.log(`🚀 API running on port ${PORT}`);
+        console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
+    });
+    startFollowUpCron();
 };
 
 startServer().catch((err) => {
-  console.error("❌ Failed to start:", err);
-  process.exit(1);
+    console.error("❌ Failed to start:", err);
+    process.exit(1);
 });
 
 export default app;
