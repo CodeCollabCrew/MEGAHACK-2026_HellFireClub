@@ -50,7 +50,7 @@ function parseExcelBuffer(buffer: Buffer): { columns: string[]; rows: Record<str
 export async function analyzeExcelBuffer(buffer: Buffer): Promise<ExcelAnalysisResult> {
   const { columns, rows } = parseExcelBuffer(buffer);
 
-  const preview = rows.slice(0, 10);
+  const preview = rows.slice(0, 200);
   const dataSample = JSON.stringify(preview, null, 2);
   const apiKey = process.env.GROQ_API_KEY;
 

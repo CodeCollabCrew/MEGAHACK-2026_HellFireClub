@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   FileSpreadsheet,
   Upload,
@@ -10,6 +10,7 @@ import {
   Target,
   BarChart3,
   X,
+  MessageSquare,
 } from "lucide-react";
 import { excelApi } from "@/lib/api";
 
@@ -36,15 +37,29 @@ export interface ExcelAnalysisResult {
 
 type SourceTab = "email" | "upload";
 
+const STAGGER_MS = 380;
+
 export default function ExcelAnalysisPanel() {
   const [sourceTab, setSourceTab] = useState<SourceTab>("email");
   const [attachments, setAttachments] = useState<ExcelAttachment[]>([]);
   const [loadingAttachments, setLoadingAttachments] = useState(true);
   const [selectedAttachment, setSelectedAttachment] = useState<ExcelAttachment | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<ExcelAnalysisResult | null>(null);
+  const [streamingItems, setStreamingItems] = useState<{
+    summary: string;
+    insights: string[];
+    recommendations: string[];
+    stage: "summary" | "insights" | "recommendations" | "done";
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef(false);
+  const [hoveredUploadIndex, setHoveredUploadIndex] = useState<number | null>(null);
+  const [filterCountry, setFilterCountry] = useState<string>("All");
+  const [filterIndustry, setFilterIndustry] = useState<string>("All");
+  const [filterRisk, setFilterRisk] = useState<string>("All");
 
   const fetchAttachments = useCallback(async () => {
     setLoadingAttachments(true);
@@ -62,33 +77,273 @@ export default function ExcelAnalysisPanel() {
     fetchAttachments();
   }, [fetchAttachments]);
 
-  const runAnalysis = async () => {
+  const runAnalysis = useCallback(async () => {
     setError(null);
     setResult(null);
+    setStreamingItems(null);
     setAnalyzing(true);
+    abortRef.current = false;
 
     try {
+      let res: any;
       if (sourceTab === "upload" && uploadFile) {
-        const res = await excelApi.analyzeFile(uploadFile);
-        setResult(res.data?.data || null);
+        res = await excelApi.analyzeFile(uploadFile);
       } else if (sourceTab === "email" && selectedAttachment) {
-        const res = await excelApi.analyzeFromEmail(
+        res = await excelApi.analyzeFromEmail(
           selectedAttachment.emailId,
           selectedAttachment.attachmentId
         );
-        setResult(res.data?.data || null);
       } else {
         setError(sourceTab === "upload" ? "Select a file to upload" : "Select an Excel file from email");
+        setAnalyzing(false);
+        return;
+      }
+
+      if (abortRef.current) return;
+      const data = res.data?.data;
+      if (!data) {
+        setError("No data received");
+        setAnalyzing(false);
+        return;
+      }
+
+      setResult(data);
+
+      // Progressive chat-style display: summary → insights one-by-one → recommendations one-by-one
+      setStreamingItems({
+        summary: data.summary || "",
+        insights: [],
+        recommendations: [],
+        stage: "summary",
+      });
+
+      const insights = data.insights || [];
+      const recommendations = data.recommendations || [];
+
+      for (let i = 0; i < insights.length; i++) {
+        if (abortRef.current) break;
+        await new Promise((r) => setTimeout(r, STAGGER_MS));
+        setStreamingItems((prev) =>
+          prev ? { ...prev, insights: insights.slice(0, i + 1), stage: "insights" } : prev
+        );
+      }
+
+      for (let i = 0; i < recommendations.length; i++) {
+        if (abortRef.current) break;
+        await new Promise((r) => setTimeout(r, STAGGER_MS));
+        setStreamingItems((prev) =>
+          prev ? { ...prev, recommendations: recommendations.slice(0, i + 1), stage: "recommendations" } : prev
+        );
+      }
+
+      if (!abortRef.current) {
+        setStreamingItems((prev) => (prev ? { ...prev, stage: "done" } : prev));
       }
     } catch (err: any) {
-      setError(err?.response?.data?.error || "Analysis failed");
+      if (!abortRef.current) setError(err?.response?.data?.error || "Analysis failed");
     } finally {
       setAnalyzing(false);
     }
-  };
+  }, [sourceTab, uploadFile, selectedAttachment]);
+
+  // Auto-analyze when file is selected
+  useEffect(() => {
+    const canRun = (sourceTab === "email" && selectedAttachment) || (sourceTab === "upload" && uploadFile);
+    if (canRun && !analyzing) runAnalysis();
+  }, [selectedAttachment?._id, uploadFile?.name, sourceTab, runAnalysis]);
 
   const canAnalyze =
     (sourceTab === "email" && selectedAttachment) || (sourceTab === "upload" && uploadFile);
+
+  const handleSourceTab = (t: SourceTab) => {
+    setSourceTab(t);
+    if (t === "email") setUploadFile(null);
+    else setSelectedAttachment(null);
+  };
+
+  const handleSelectAttachment = (att: ExcelAttachment) => setSelectedAttachment(att);
+
+  const handleFileChange = (f: File | null) => {
+    setUploadFile(f);
+    setError(null);
+    if (f) {
+      setUploadedFiles((prev) => {
+        const exists = prev.find((file) => file.name === f.name && file.size === f.size);
+        if (exists) return prev;
+        return [f, ...prev];
+      });
+    }
+  };
+
+  const handleViewUpload = (file: File) => {
+    const url = URL.createObjectURL(file);
+    window.open(url, "_blank");
+  };
+
+  const columnCoverage = useMemo(() => {
+    if (!result || !result.columns?.length || !result.preview?.length) return [];
+    const total = result.preview.length;
+    return result.columns.map((col) => {
+      let filled = 0;
+      for (const row of result.preview) {
+        const v = row[col];
+        if (v !== null && v !== undefined && String(v).trim() !== "") filled += 1;
+      }
+      return {
+        column: col,
+        filled,
+        total,
+      };
+    });
+  }, [result]);
+
+  const getString = (row: Record<string, unknown>, keys: string[]): string | null => {
+    for (const k of keys) {
+      if (k in row) {
+        const v = row[k];
+        if (v === null || v === undefined) continue;
+        const s = String(v).trim();
+        if (s) return s;
+      }
+    }
+    return null;
+  };
+
+  const filteredRows = useMemo(() => {
+    if (!result?.preview) return [];
+    return result.preview.filter((row) => {
+      const country = getString(row, ["Country"]);
+      const industry = getString(row, ["Industry"]);
+      const risk = getString(row, ["Risk_Level", "Risk Level"]);
+
+      if (filterCountry !== "All" && country !== filterCountry) return false;
+      if (filterIndustry !== "All" && industry !== filterIndustry) return false;
+      if (filterRisk !== "All" && risk !== filterRisk) return false;
+      return true;
+    });
+  }, [result, filterCountry, filterIndustry, filterRisk]);
+
+  const COUNTRIES_KEY = ["Country"];
+  const INDUSTRY_KEY = ["Industry"];
+  const RISK_KEY = ["Risk_Level", "Risk Level"];
+  const STRATEGY_KEY = ["Business_Strategy", "Business Strategy"];
+  const CUSTOMER_TYPE_KEY = ["Customer_Type", "Customer Type"];
+
+  const uniqueFilterValues = useMemo(() => {
+    const base = result?.preview || [];
+    const countrySet = new Set<string>();
+    const industrySet = new Set<string>();
+    const riskSet = new Set<string>();
+
+    for (const row of base) {
+      const c = getString(row, COUNTRIES_KEY);
+      const i = getString(row, INDUSTRY_KEY);
+      const r = getString(row, RISK_KEY);
+      if (c) countrySet.add(c);
+      if (i) industrySet.add(i);
+      if (r) riskSet.add(r);
+    }
+
+    const toSortedArray = (s: Set<string>) => Array.from(s).sort((a, b) => a.localeCompare(b));
+
+    return {
+      countries: toSortedArray(countrySet),
+      industries: toSortedArray(industrySet),
+      risks: toSortedArray(riskSet),
+    };
+  }, [result]);
+
+  const buildCounts = (keyOptions: string[]) => {
+    const rows = filteredRows;
+    const map = new Map<string, number>();
+    for (const row of rows) {
+      const v = getString(row, keyOptions);
+      if (!v) continue;
+      map.set(v, (map.get(v) || 0) + 1);
+    }
+    const arr = Array.from(map.entries()).map(([label, value]) => ({ label, value }));
+    arr.sort((a, b) => b.value - a.value);
+    return arr;
+  };
+
+  const industryCounts = useMemo(() => buildCounts(INDUSTRY_KEY), [filteredRows]);
+  const countryCounts = useMemo(() => buildCounts(COUNTRIES_KEY), [filteredRows]);
+  const riskCounts = useMemo(() => buildCounts(RISK_KEY), [filteredRows]);
+  const strategyCounts = useMemo(() => buildCounts(STRATEGY_KEY), [filteredRows]);
+  const customerTypeCounts = useMemo(() => buildCounts(CUSTOMER_TYPE_KEY), [filteredRows]);
+
+  const buildPie = (counts: { label: string; value: number }[]) => {
+    if (!counts.length) return null;
+    const total = counts.reduce((sum, c) => sum + c.value, 0);
+    if (!total) return null;
+
+    const colors = [
+      "#22c55e",
+      "#3b82f6",
+      "#f97316",
+      "#a855f7",
+      "#ec4899",
+      "#eab308",
+      "#0ea5e9",
+      "#10b981",
+    ];
+
+    let current = 0;
+    const segments = counts.map((item, idx) => {
+      const start = current;
+      const percent = (item.value / total) * 100;
+      const end = start + percent;
+      current = end;
+      return {
+        label: item.label,
+        value: item.value,
+        percent,
+        color: colors[idx % colors.length],
+        start,
+        end,
+      };
+    });
+
+    const gradient = segments
+      .map((seg) => `${seg.color} ${seg.start.toFixed(2)}% ${seg.end.toFixed(2)}%`)
+      .join(", ");
+
+    return {
+      segments,
+      gradient: `conic-gradient(${gradient})`,
+      total,
+    };
+  };
+
+  const industryPie = useMemo(() => buildPie(industryCounts), [industryCounts]);
+  const riskPie = useMemo(() => buildPie(riskCounts), [riskCounts]);
+  const customerPie = useMemo(() => buildPie(customerTypeCounts), [customerTypeCounts]);
+
+  const heatmap = useMemo(() => {
+    if (!filteredRows.length) return null;
+    const industries = Array.from(
+      new Set(filteredRows.map((r) => getString(r, INDUSTRY_KEY)).filter(Boolean) as string[])
+    ).sort((a, b) => a.localeCompare(b));
+    const risks = Array.from(
+      new Set(filteredRows.map((r) => getString(r, RISK_KEY)).filter(Boolean) as string[])
+    ).sort((a, b) => a.localeCompare(b));
+
+    const matrix: number[][] = industries.map(() => risks.map(() => 0));
+    let max = 0;
+
+    filteredRows.forEach((row) => {
+      const iVal = getString(row, INDUSTRY_KEY);
+      const rVal = getString(row, RISK_KEY);
+      if (!iVal || !rVal) return;
+      const iIdx = industries.indexOf(iVal);
+      const rIdx = risks.indexOf(rVal);
+      if (iIdx === -1 || rIdx === -1) return;
+      matrix[iIdx][rIdx] += 1;
+      if (matrix[iIdx][rIdx] > max) max = matrix[iIdx][rIdx];
+    });
+
+    return { industries, risks, matrix, max };
+  }, [filteredRows]);
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: "20px", minHeight: "500px" }} className="email-grid">
@@ -96,7 +351,7 @@ export default function ExcelAnalysisPanel() {
       <div className="card" style={{ padding: "0", display: "flex", flexDirection: "column", maxHeight: "calc(100vh - 180px)" }}>
         <div style={{ padding: "16px 18px", borderBottom: "1px solid var(--border)", display: "flex", gap: "8px" }}>
           <button
-            onClick={() => { setSourceTab("email"); setSelectedAttachment(null); setResult(null); setError(null); }}
+            onClick={() => handleSourceTab("email")}
             style={{
               flex: 1, padding: "8px 12px", fontSize: "12px", border: "1px solid var(--border)",
               borderRadius: "3px", cursor: "pointer", background: sourceTab === "email" ? "var(--punch-bg)" : "transparent",
@@ -105,7 +360,7 @@ export default function ExcelAnalysisPanel() {
             <Mail size={14} /> From Email
           </button>
           <button
-            onClick={() => { setSourceTab("upload"); setUploadFile(null); setResult(null); setError(null); }}
+            onClick={() => handleSourceTab("upload")}
             style={{
               flex: 1, padding: "8px 12px", fontSize: "12px", border: "1px solid var(--border)",
               borderRadius: "3px", cursor: "pointer", background: sourceTab === "upload" ? "var(--punch-bg)" : "transparent",
@@ -135,7 +390,7 @@ export default function ExcelAnalysisPanel() {
                   {attachments.map((att) => (
                     <button
                       key={att._id}
-                      onClick={() => setSelectedAttachment(att)}
+                      onClick={() => handleSelectAttachment(att)}
                       style={{
                         display: "flex", alignItems: "center", gap: "10px", padding: "10px 12px",
                         borderRadius: "3px", border: "1px solid var(--border)", cursor: "pointer",
@@ -160,33 +415,124 @@ export default function ExcelAnalysisPanel() {
           )}
 
           {sourceTab === "upload" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             <label
               style={{
-                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                padding: "32px", border: "2px dashed var(--border)", borderRadius: "6px",
-                cursor: "pointer", background: "var(--surface)", minHeight: "180px",
-                borderColor: uploadFile ? "var(--punch)" : "var(--border)"
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "32px",
+                border: "2px dashed var(--border)",
+                borderRadius: "6px",
+                cursor: "pointer",
+                background: "var(--surface)",
+                minHeight: "140px",
+                borderColor: uploadFile ? "var(--punch)" : "var(--border)",
               }}
             >
               <input
                 type="file"
                 accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  setUploadFile(f || null);
-                  setResult(null);
-                  setError(null);
-                }}
+                onChange={(e) => handleFileChange(e.target.files?.[0] || null)}
                 style={{ display: "none" }}
               />
-              <Upload size={36} style={{ color: uploadFile ? "var(--punch)" : "var(--text-3)", marginBottom: "12px" }} />
+              <Upload
+                size={36}
+                style={{ color: uploadFile ? "var(--punch)" : "var(--text-3)", marginBottom: "12px" }}
+              />
               <span style={{ fontSize: "13px", color: "var(--text-2)" }}>
                 {uploadFile ? uploadFile.name : "Click to select Excel / CSV"}
               </span>
               <span style={{ fontSize: "11px", color: "var(--text-3)", marginTop: "4px" }}>
-                .xlsx, .xls, .csv
+                .xlsx, .xls, .csv · auto-analyzes on select
               </span>
             </label>
+
+            {uploadedFiles.length > 0 && (
+              <div>
+                <p
+                  style={{
+                    fontSize: "11px",
+                    fontFamily: "'Space Mono',monospace",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
+                    color: "var(--text-3)",
+                    marginBottom: "6px",
+                  }}
+                >
+                  Recent uploads
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {uploadedFiles.map((file, idx) => (
+                    <div
+                      key={file.name + idx}
+                      onMouseEnter={() => setHoveredUploadIndex(idx)}
+                      onMouseLeave={() => setHoveredUploadIndex((prev) => (prev === idx ? null : prev))}
+                      style={{ position: "relative" }}
+                    >
+                      <button
+                        onClick={() => handleFileChange(file)}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          padding: "8px 10px",
+                          borderRadius: "3px",
+                          border: "1px solid var(--border)",
+                          background:
+                            uploadFile && uploadFile.name === file.name && uploadFile.size === file.size
+                              ? "var(--punch-bg)"
+                              : "var(--card)",
+                          cursor: "pointer",
+                          textAlign: "left",
+                          width: "100%",
+                        }}
+                      >
+                        <FileSpreadsheet size={14} style={{ color: "var(--punch)", flexShrink: 0 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p
+                            style={{
+                              fontSize: "12px",
+                              fontWeight: 500,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {file.name}
+                          </p>
+                          <p style={{ fontSize: "10px", color: "var(--text-3)" }}>
+                            {(file.size / 1024).toFixed(1)} KB
+                          </p>
+                        </div>
+                      </button>
+                      {hoveredUploadIndex === idx && (
+                        <button
+                          onClick={() => handleViewUpload(file)}
+                          style={{
+                            position: "absolute",
+                            right: "8px",
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            fontSize: "10px",
+                            padding: "2px 6px",
+                            borderRadius: "999px",
+                            border: "1px solid var(--border)",
+                            background: "var(--card)",
+                            color: "var(--text-3)",
+                            cursor: "pointer",
+                          }}
+                        >
+                          View
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           )}
         </div>
 
@@ -201,22 +547,29 @@ export default function ExcelAnalysisPanel() {
             }}
           >
             {analyzing ? <Loader2 size={14} className="anim-spin" /> : <BarChart3 size={14} />}
-            {analyzing ? "Analyzing…" : "Analyze with AI"}
+            {analyzing ? "Analyzing…" : "Re-analyze"}
           </button>
         </div>
       </div>
 
-      {/* Right: Analysis results */}
+      {/* Right: Chat-style results */}
       <div className="card" style={{ padding: "0", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {!result && !error && (
+        {!result && !error && !analyzing && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px", color: "var(--text-3)" }}>
             <FileSpreadsheet size={48} style={{ marginBottom: "16px", opacity: 0.5 }} />
-            <p style={{ fontSize: "14px" }}>Select a file and run analysis</p>
-            <p style={{ fontSize: "12px", marginTop: "6px" }}>Get summary, insights & recommendations</p>
+            <p style={{ fontSize: "14px" }}>Select a file — insights appear automatically</p>
+            <p style={{ fontSize: "12px", marginTop: "6px" }}>Summary, insights & recommendations stream in</p>
           </div>
         )}
 
-        {error && (
+        {analyzing && !streamingItems && (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px" }}>
+            <Loader2 size={32} className="anim-spin" style={{ color: "var(--punch)", marginBottom: "16px" }} />
+            <p style={{ fontSize: "14px", color: "var(--text-2)" }}>Analyzing your data…</p>
+          </div>
+        )}
+
+        {error && !analyzing && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px" }}>
             <p style={{ fontSize: "14px", color: "var(--red)" }}>{error}</p>
             <button onClick={() => setError(null)} className="btn-outline" style={{ marginTop: "12px", padding: "8px 16px" }}>
@@ -225,83 +578,923 @@ export default function ExcelAnalysisPanel() {
           </div>
         )}
 
-        {result && (
+        {(result || streamingItems) && (
           <>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 18px", borderBottom: "1px solid var(--border)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                 <div style={{ width: "32px", height: "32px", borderRadius: "3px", background: "var(--punch-bg)", border: "1px solid var(--punch-bdr)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <BarChart3 size={16} style={{ color: "var(--punch)" }} />
+                  <MessageSquare size={16} style={{ color: "var(--punch)" }} />
                 </div>
                 <div>
-                  <p style={{ fontSize: "14px", fontWeight: 600, color: "var(--text)" }}>Excel Analysis</p>
-                  <p style={{ fontSize: "11px", color: "var(--text-3)" }}>{result.rowCount} rows · {result.columns.length} columns</p>
+                  <p style={{ fontSize: "14px", fontWeight: 600, color: "var(--text)" }}>Excel Insights</p>
+                  <p style={{ fontSize: "11px", color: "var(--text-3)" }}>
+                    {result ? `${result.rowCount} rows · ${result.columns.length} columns` : "Loading…"}
+                  </p>
                 </div>
               </div>
-              <button onClick={() => setResult(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-3)" }}>
+              <button onClick={() => { setResult(null); setStreamingItems(null); setError(null); }} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-3)" }}>
                 <X size={18} />
               </button>
             </div>
 
-            <div style={{ flex: 1, overflowY: "auto", padding: "20px", display: "flex", flexDirection: "column", gap: "20px" }}>
-              <div style={{ padding: "14px 16px", background: "var(--punch-bg)", border: "1px solid var(--punch-bdr)", borderRadius: "4px" }}>
-                <p style={{ fontFamily: "'Space Mono',monospace", fontSize: "10px", color: "var(--punch)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "8px" }}>Summary</p>
-                <p style={{ fontSize: "13px", color: "var(--text-2)", lineHeight: 1.6 }}>{result.summary}</p>
-              </div>
-
-              {result.insights?.length > 0 && (
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-                    <Lightbulb size={14} style={{ color: "var(--yellow)" }} />
-                    <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text)" }}>Key Insights</span>
+            <div
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: "20px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "18px",
+              }}
+            >
+              {result && (
+                <>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                      gap: "10px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        padding: "12px 14px",
+                        borderRadius: "6px",
+                        border: "1px solid var(--border)",
+                        background: "var(--surface)",
+                      }}
+                    >
+                      <p
+                        style={{
+                          fontFamily: "'Space Mono',monospace",
+                          fontSize: "10px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.1em",
+                          color: "var(--text-3)",
+                          marginBottom: "6px",
+                        }}
+                      >
+                        Rows
+                      </p>
+                      <p style={{ fontSize: "20px", fontWeight: 600 }}>{result.rowCount}</p>
+                    </div>
+                    <div
+                      style={{
+                        padding: "12px 14px",
+                        borderRadius: "6px",
+                        border: "1px solid var(--border)",
+                        background: "var(--surface)",
+                      }}
+                    >
+                      <p
+                        style={{
+                          fontFamily: "'Space Mono',monospace",
+                          fontSize: "10px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.1em",
+                          color: "var(--text-3)",
+                          marginBottom: "6px",
+                        }}
+                      >
+                        Columns
+                      </p>
+                      <p style={{ fontSize: "20px", fontWeight: 600 }}>{result.columns.length}</p>
+                    </div>
+                    <div
+                      style={{
+                        padding: "12px 14px",
+                        borderRadius: "6px",
+                        border: "1px solid var(--border)",
+                        background: "var(--surface)",
+                      }}
+                    >
+                      <p
+                        style={{
+                          fontFamily: "'Space Mono',monospace",
+                          fontSize: "10px",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.1em",
+                          color: "var(--text-3)",
+                          marginBottom: "6px",
+                        }}
+                      >
+                        Previewed rows
+                      </p>
+                      <p style={{ fontSize: "20px", fontWeight: 600 }}>
+                        {Math.min(result.preview?.length || 0, 200)}
+                      </p>
+                    </div>
                   </div>
-                  <ul style={{ margin: 0, paddingLeft: "20px", fontSize: "13px", color: "var(--text-2)", lineHeight: 1.7 }}>
-                    {result.insights.map((s, i) => (
-                      <li key={i} style={{ marginBottom: "6px" }}>{s}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
 
-              {result.recommendations?.length > 0 && (
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-                    <Target size={14} style={{ color: "var(--green)" }} />
-                    <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text)" }}>Recommendations</span>
-                  </div>
-                  <ul style={{ margin: 0, paddingLeft: "20px", fontSize: "13px", color: "var(--text-2)", lineHeight: 1.7 }}>
-                    {result.recommendations.map((s, i) => (
-                      <li key={i} style={{ marginBottom: "6px" }}>{s}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {result.preview?.length > 0 && (
-                <div>
-                  <p style={{ fontFamily: "'Space Mono',monospace", fontSize: "10px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "10px" }}>Data Preview</p>
-                  <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: "4px" }}>
-                    <table style={{ width: "100%", fontSize: "12px", borderCollapse: "collapse" }}>
-                      <thead>
-                        <tr style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)" }}>
-                          {result.columns.map((col) => (
-                            <th key={col} style={{ padding: "8px 12px", textAlign: "left", fontWeight: 600, color: "var(--text)" }}>{col}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {result.preview.slice(0, 8).map((row, i) => (
-                          <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}>
-                            {result.columns.map((col) => (
-                              <td key={col} style={{ padding: "8px 12px", color: "var(--text-2)" }}>
-                                {String(row[col] ?? "")}
-                              </td>
-                            ))}
-                          </tr>
+                  <div
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: "6px",
+                      border: "1px solid var(--border)",
+                      background: "var(--surface)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "10px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontFamily: "'Space Mono',monospace",
+                        fontSize: "10px",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.12em",
+                        color: "var(--text-3)",
+                      }}
+                    >
+                      Filters
+                    </span>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "8px",
+                        flexWrap: "wrap",
+                        justifyContent: "flex-end",
+                      }}
+                    >
+                      <select
+                        value={filterCountry}
+                        onChange={(e) => setFilterCountry(e.target.value)}
+                        style={{
+                          fontSize: "11px",
+                          padding: "4px 8px",
+                          borderRadius: "999px",
+                          border: "1px solid var(--border)",
+                          background: "var(--card)",
+                          color: "var(--text)",
+                          minWidth: "120px",
+                        }}
+                      >
+                        <option value="All">All countries</option>
+                        {uniqueFilterValues.countries.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
                         ))}
-                      </tbody>
-                    </table>
+                      </select>
+                      <select
+                        value={filterIndustry}
+                        onChange={(e) => setFilterIndustry(e.target.value)}
+                        style={{
+                          fontSize: "11px",
+                          padding: "4px 8px",
+                          borderRadius: "999px",
+                          border: "1px solid var(--border)",
+                          background: "var(--card)",
+                          color: "var(--text)",
+                          minWidth: "120px",
+                        }}
+                      >
+                        <option value="All">All industries</option>
+                        {uniqueFilterValues.industries.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={filterRisk}
+                        onChange={(e) => setFilterRisk(e.target.value)}
+                        style={{
+                          fontSize: "11px",
+                          padding: "4px 8px",
+                          borderRadius: "999px",
+                          border: "1px solid var(--border)",
+                          background: "var(--card)",
+                          color: "var(--text)",
+                          minWidth: "120px",
+                        }}
+                      >
+                        <option value="All">All risk levels</option>
+                        {uniqueFilterValues.risks.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: "14px",
+                    }}
+                  >
+                    {/* Industry Pie Chart */}
+                    <div
+                      style={{
+                        padding: "14px 16px",
+                        borderRadius: "6px",
+                        border: "1px solid var(--border)",
+                        background: "var(--surface)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "10px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: "8px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            color: "var(--text)",
+                          }}
+                        >
+                          Industry pie chart
+                        </span>
+                      </div>
+                      {industryPie ? (
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(0, 120px) minmax(0, 1fr)",
+                            gap: "10px",
+                            alignItems: "center",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: "110px",
+                              height: "110px",
+                              borderRadius: "999px",
+                              backgroundImage: industryPie.gradient,
+                              position: "relative",
+                              margin: "0 auto",
+                            }}
+                          >
+                            <div
+                              style={{
+                                position: "absolute",
+                                inset: "18px",
+                                borderRadius: "999px",
+                                background: "var(--surface)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexDirection: "column",
+                                gap: "2px",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: "10px",
+                                  color: "var(--text-3)",
+                                }}
+                              >
+                                Total
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: "16px",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {industryPie.total}
+                              </span>
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "4px",
+                              maxHeight: "110px",
+                              overflowY: "auto",
+                            }}
+                          >
+                            {industryPie.segments.map((seg) => (
+                              <div
+                                key={seg.label}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  fontSize: "11px",
+                                  color: "var(--text-3)",
+                                  gap: "8px",
+                                }}
+                              >
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
+                                  <div
+                                    style={{
+                                      width: "8px",
+                                      height: "8px",
+                                      borderRadius: "999px",
+                                      background: seg.color,
+                                      flexShrink: 0,
+                                    }}
+                                  />
+                                  <span
+                                    style={{
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                    title={seg.label}
+                                  >
+                                    {seg.label}
+                                  </span>
+                                </div>
+                                <span>
+                                  {seg.value} · {seg.percent.toFixed(0)}%
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: "11px", color: "var(--text-3)" }}>
+                          Not enough Industry data to chart.
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Country Bar Chart */}
+                    <div
+                      style={{
+                        padding: "14px 16px",
+                        borderRadius: "6px",
+                        border: "1px solid var(--border)",
+                        background: "var(--surface)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "10px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: "8px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            color: "var(--text)",
+                          }}
+                        >
+                          Country bar chart
+                        </span>
+                      </div>
+                      {countryCounts.length === 0 ? (
+                        <span style={{ fontSize: "11px", color: "var(--text-3)" }}>
+                          Not enough Country data to chart.
+                        </span>
+                      ) : (
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "6px",
+                            maxHeight: "150px",
+                            overflowY: "auto",
+                          }}
+                        >
+                          {countryCounts.map((item, idx) => {
+                            const max = countryCounts[0]?.value || 1;
+                            const width = `${(item.value / max) * 100}%`;
+                            return (
+                              <div key={item.label + idx} style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    fontSize: "11px",
+                                    color: "var(--text-3)",
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                      maxWidth: "70%",
+                                    }}
+                                    title={item.label}
+                                  >
+                                    {item.label}
+                                  </span>
+                                  <span>{item.value}</span>
+                                </div>
+                                <div
+                                  style={{
+                                    width: "100%",
+                                    height: "7px",
+                                    borderRadius: "999px",
+                                    background: "var(--border)",
+                                    overflow: "hidden",
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      width,
+                                      height: "100%",
+                                      borderRadius: "999px",
+                                      background:
+                                        "linear-gradient(90deg, rgba(59,130,246,0.9) 0%, rgba(56,189,248,0.95) 100%)",
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Risk Donut Chart */}
+                    <div
+                      style={{
+                        padding: "14px 16px",
+                        borderRadius: "6px",
+                        border: "1px solid var(--border)",
+                        background: "var(--surface)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "10px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: "8px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            color: "var(--text)",
+                          }}
+                        >
+                          Risk donut chart
+                        </span>
+                      </div>
+                      {riskPie ? (
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(0, 120px) minmax(0, 1fr)",
+                            gap: "10px",
+                            alignItems: "center",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: "110px",
+                              height: "110px",
+                              borderRadius: "999px",
+                              backgroundImage: riskPie.gradient,
+                              position: "relative",
+                              margin: "0 auto",
+                            }}
+                          >
+                            <div
+                              style={{
+                                position: "absolute",
+                                inset: "18px",
+                                borderRadius: "999px",
+                                background: "var(--surface)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexDirection: "column",
+                                gap: "2px",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: "10px",
+                                  color: "var(--text-3)",
+                                }}
+                              >
+                                Total
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: "16px",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {riskPie.total}
+                              </span>
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "4px",
+                              maxHeight: "110px",
+                              overflowY: "auto",
+                            }}
+                          >
+                            {riskPie.segments.map((seg) => (
+                              <div
+                                key={seg.label}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  fontSize: "11px",
+                                  color: "var(--text-3)",
+                                  gap: "8px",
+                                }}
+                              >
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
+                                  <div
+                                    style={{
+                                      width: "8px",
+                                      height: "8px",
+                                      borderRadius: "999px",
+                                      background: seg.color,
+                                      flexShrink: 0,
+                                    }}
+                                  />
+                                  <span
+                                    style={{
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                    title={seg.label}
+                                  >
+                                    {seg.label}
+                                  </span>
+                                </div>
+                                <span>
+                                  {seg.value} · {seg.percent.toFixed(0)}%
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: "11px", color: "var(--text-3)" }}>
+                          Not enough Risk Level data to chart.
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Strategy Column Chart */}
+                    <div
+                      style={{
+                        padding: "14px 16px",
+                        borderRadius: "6px",
+                        border: "1px solid var(--border)",
+                        background: "var(--surface)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "10px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: "8px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            color: "var(--text)",
+                          }}
+                        >
+                          Strategy column chart
+                        </span>
+                      </div>
+                      {strategyCounts.length === 0 ? (
+                        <span style={{ fontSize: "11px", color: "var(--text-3)" }}>
+                          Not enough Strategy data to chart.
+                        </span>
+                      ) : (
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-end",
+                            gap: "6px",
+                            height: "150px",
+                            paddingTop: "6px",
+                          }}
+                        >
+                          {strategyCounts.slice(0, 10).map((item, idx) => {
+                            const max = strategyCounts[0]?.value || 1;
+                            const height = `${(item.value / max) * 100}%`;
+                            return (
+                              <div
+                                key={item.label + idx}
+                                style={{
+                                  flex: 1,
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  alignItems: "center",
+                                  gap: "4px",
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    width: "100%",
+                                    flexGrow: 1,
+                                    display: "flex",
+                                    alignItems: "flex-end",
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      width: "100%",
+                                      height,
+                                      borderRadius: "4px 4px 0 0",
+                                      background:
+                                        "linear-gradient(180deg, rgba(249,115,22,0.95) 0%, rgba(234,179,8,0.95) 100%)",
+                                    }}
+                                  />
+                                </div>
+                                <span style={{ fontSize: "10px", color: "var(--text-3)" }}>{item.value}</span>
+                                <span
+                                  style={{
+                                    fontSize: "9px",
+                                    color: "var(--text-3)",
+                                    maxWidth: "100%",
+                                    textAlign: "center",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                  title={item.label}
+                                >
+                                  {item.label}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Customer Type Pie Chart */}
+                    <div
+                      style={{
+                        padding: "14px 16px",
+                        borderRadius: "6px",
+                        border: "1px solid var(--border)",
+                        background: "var(--surface)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "10px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: "8px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            color: "var(--text)",
+                          }}
+                        >
+                          Customer type pie chart
+                        </span>
+                      </div>
+                      {customerPie ? (
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(0, 120px) minmax(0, 1fr)",
+                            gap: "10px",
+                            alignItems: "center",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: "110px",
+                              height: "110px",
+                              borderRadius: "999px",
+                              backgroundImage: customerPie.gradient,
+                              position: "relative",
+                              margin: "0 auto",
+                            }}
+                          >
+                            <div
+                              style={{
+                                position: "absolute",
+                                inset: "18px",
+                                borderRadius: "999px",
+                                background: "var(--surface)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexDirection: "column",
+                                gap: "2px",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: "10px",
+                                  color: "var(--text-3)",
+                                }}
+                              >
+                                Total
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: "16px",
+                                  fontWeight: 600,
+                                }}
+                              >
+                                {customerPie.total}
+                              </span>
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              flexDirection: "column",
+                              gap: "4px",
+                              maxHeight: "110px",
+                              overflowY: "auto",
+                            }}
+                          >
+                            {customerPie.segments.map((seg) => (
+                              <div
+                                key={seg.label}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  fontSize: "11px",
+                                  color: "var(--text-3)",
+                                  gap: "8px",
+                                }}
+                              >
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}>
+                                  <div
+                                    style={{
+                                      width: "8px",
+                                      height: "8px",
+                                      borderRadius: "999px",
+                                      background: seg.color,
+                                      flexShrink: 0,
+                                    }}
+                                  />
+                                  <span
+                                    style={{
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                    title={seg.label}
+                                  >
+                                    {seg.label}
+                                  </span>
+                                </div>
+                                <span>
+                                  {seg.value} · {seg.percent.toFixed(0)}%
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: "11px", color: "var(--text-3)" }}>
+                          Not enough Customer Type data to chart.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {heatmap && (
+                    <div
+                      style={{
+                        padding: "14px 16px",
+                        borderRadius: "6px",
+                        border: "1px solid var(--border)",
+                        background: "var(--surface)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "10px",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: "8px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            color: "var(--text)",
+                          }}
+                        >
+                          Industry × Risk heat map
+                        </span>
+                        <span style={{ fontSize: "10px", color: "var(--text-3)" }}>Cell color = count</span>
+                      </div>
+                      <div style={{ overflowX: "auto" }}>
+                        <table
+                          style={{
+                            borderCollapse: "collapse",
+                            width: "100%",
+                            fontSize: "11px",
+                          }}
+                        >
+                          <thead>
+                            <tr>
+                              <th
+                                style={{
+                                  padding: "6px 8px",
+                                  textAlign: "left",
+                                  color: "var(--text-3)",
+                                  fontWeight: 500,
+                                }}
+                              >
+                                Industry \ Risk
+                              </th>
+                              {heatmap.risks.map((risk) => (
+                                <th
+                                  key={risk}
+                                  style={{
+                                    padding: "6px 8px",
+                                    textAlign: "center",
+                                    color: "var(--text-3)",
+                                    fontWeight: 500,
+                                  }}
+                                >
+                                  {risk}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {heatmap.industries.map((industry, iIdx) => (
+                              <tr key={industry}>
+                                <td
+                                  style={{
+                                    padding: "6px 8px",
+                                    color: "var(--text-2)",
+                                    borderTop: "1px solid var(--border)",
+                                  }}
+                                >
+                                  {industry}
+                                </td>
+                                {heatmap.risks.map((risk, rIdx) => {
+                                  const value = heatmap.matrix[iIdx][rIdx];
+                                  const ratio = heatmap.max ? value / heatmap.max : 0;
+                                  const bg = `rgba(34,197,94,${0.12 + ratio * 0.55})`;
+                                  return (
+                                    <td
+                                      key={risk}
+                                      style={{
+                                        padding: "6px 8px",
+                                        textAlign: "center",
+                                        borderTop: "1px solid var(--border)",
+                                        background: value ? bg : "transparent",
+                                        color: value ? "var(--text)" : "var(--text-3)",
+                                      }}
+                                    >
+                                      {value || "-"}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </>
