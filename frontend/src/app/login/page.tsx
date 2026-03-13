@@ -2,15 +2,12 @@
 
 export const dynamic = "force-dynamic";
 
-import { useState, useEffect, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Sun, Moon } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
 import { authApi, saveToken } from "@/lib/api";
-
-function LoginInner() {
   const router       = useRouter();
-  const searchParams = useSearchParams();
   const { theme, toggle } = useTheme();
 
   const [mode, setMode]         = useState<"login" | "signup">("login");
@@ -23,9 +20,11 @@ function LoginInner() {
 
   // Google OAuth redirect handle
   useEffect(() => {
-    const token      = searchParams.get("token");
-    const userName   = searchParams.get("name");
-    const oauthError = searchParams.get("error");
+    if (typeof window === "undefined") return;
+    const params      = new URLSearchParams(window.location.search);
+    const token       = params.get("token");
+    const userName    = params.get("name");
+    const oauthError  = params.get("error");
 
     if (oauthError) {
       setError(`Google sign-in failed: ${oauthError}`);
@@ -33,13 +32,13 @@ function LoginInner() {
     }
 
     if (token) {
-      saveToken(token); // ✅ cookie + localStorage dono
+      saveToken(token); // cookie + localStorage
       if (userName) {
         localStorage.setItem("axon_user", JSON.stringify({ name: decodeURIComponent(userName) }));
       }
       router.replace("/dashboard");
     }
-  }, [searchParams]);
+  }, [router]);
 
   // Email/Password Login or Register
   const handleSubmit = async (e: React.FormEvent) => {
@@ -201,10 +200,4 @@ function LoginInner() {
   );
 }
 
-export default function LoginPage() {
-  return (
-    <Suspense fallback={<div style={{ padding: "40px", textAlign: "center" }}>Loading…</div>}>
-      <LoginInner />
-    </Suspense>
-  );
-}
+export default LoginPage;
