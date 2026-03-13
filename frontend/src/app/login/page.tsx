@@ -8,7 +8,7 @@ import { Eye, EyeOff, Sun, Moon } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
 import { authApi, saveToken } from "@/lib/api";
 
-export default function LoginPage() {
+function LoginContent() {
   const router       = useRouter();
   const { theme, toggle } = useTheme();
 
@@ -200,4 +200,17 @@ export default function LoginPage() {
       </div>
     </div>
   );
+}
+
+export default function LoginPage() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) {
+    return (
+      <div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ fontSize: "14px", color: "var(--text-3)" }}>Loading…</div>
+      </div>
+    );
+  }
+  return <LoginContent />;
 }
