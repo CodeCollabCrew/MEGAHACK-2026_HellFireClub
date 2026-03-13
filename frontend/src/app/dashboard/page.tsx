@@ -1,7 +1,18 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, AlertTriangle, ChevronRight, LogIn } from "lucide-react";
+import {
+  Plus,
+  AlertTriangle,
+  ChevronRight,
+  LogIn,
+  Zap,
+  Database,
+  Globe,
+  RefreshCw,
+  Lock,
+} from "lucide-react";
+import axios from "axios";
 
 import { useTasks }    from "@/hooks/useTasks";
 import { useEmails }   from "@/hooks/useEmails";
@@ -29,7 +40,10 @@ import { Email }          from "@/types";
 import { isOverdue }      from "@/lib/utils";
 import api, { clearToken, saveToken } from "@/lib/api";
 
-type Tab      = "dashboard" | "emails" | "pipeline" | "insights" | "excel";
+const BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").replace(/\/+$/, "");
+const API = BASE_URL.endsWith("/api") ? BASE_URL : `${BASE_URL}/api`;
+
+type Tab = "dashboard" | "emails" | "pipeline" | "insights" | "excel";
 type EmailTab = "inbox" | "sent";
 
 export default function DashboardPage() {
@@ -41,6 +55,12 @@ export default function DashboardPage() {
   const [booting, setBooting]     = useState(true);
   const [user, setUser]           = useState<{ name: string; email?: string; isGuest?: boolean } | null>(null);
   const [sentMails, setSentMails] = useState<any[]>([]);
+  const [sysStats, setSysStats] = useState({
+    dbStatus: "Connected",
+    apiLatency: "...",
+    uptime: "...",
+    activeSessions: 0
+  });
 
   const { tasks, stats, loading: tLoad, fetchTasks, moveTask }                                                       = useTasks();
   const { emails, processingEmailId, processingAll, lastResult, setLastResult, fetchEmails, processOne, processAll } = useEmails();
@@ -51,63 +71,77 @@ export default function DashboardPage() {
     try {
       const res = await api.get("/api/gmail/sent");
       setSentMails(res.data.data || []);
-    } catch {}
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const fetchHealth = useCallback(async () => {
+    try {
+      const res = await axios.get(`${API}/admin/health`);
+      if (res.data.success) {
+        setSysStats(res.data.data);
+      }
+    } catch (e) {
+      console.error("Health sync failed", e);
+    }
   }, []);
 
   // ── Boot ─────────────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
-      // Google OAuth callback — URL mein token aata hai
-      const params    = new URLSearchParams(window.location.search);
-      const urlToken  = params.get("token");
+      const params = new URLSearchParams(window.location.search);
+      const urlToken = params.get("token");
       const nameParam = params.get("name");
 
       if (urlToken) {
         saveToken(urlToken);
         if (nameParam) {
-          localStorage.setItem("axon_user", JSON.stringify({ name: decodeURIComponent(nameParam) }));
+          localStorage.setItem(
+            "axon_user",
+            JSON.stringify({ name: decodeURIComponent(nameParam) })
+          );
         }
         window.history.replaceState({}, "", "/dashboard");
       }
 
-      // Token nahi hai → login pe bhejo
       const storedToken = urlToken || localStorage.getItem("axon_token");
       if (!storedToken) {
         router.push("/login");
         return;
       }
 
-      // ✅ DB se real user fetch karo — localStorage pe kabhi bharosa mat karo
       try {
-        const res      = await api.get("/api/auth/me");
-        const u        = res.data.data;
+        const res = await api.get("/api/auth/me");
+        const u = res.data.data;
         const userData = {
-          name:    u.name,
-          email:   u.email,
+          name: u.name,
+          email: u.email,
           isGuest: u.isGuest ?? false,
         };
         setUser(userData);
         localStorage.setItem("axon_user", JSON.stringify(userData));
       } catch {
-        // Token invalid ya expire — logout
         clearToken();
         router.push("/login");
         return;
       }
 
-      Promise.all([fetchTasks(), fetchEmails()]).finally(() => setBooting(false));
+      Promise.all([fetchTasks(), fetchEmails(), fetchHealth()]).finally(() =>
+        setBooting(false)
+      );
     })();
-  }, []);
+  }, [fetchTasks, fetchEmails, fetchHealth, router]);
 
   useEffect(() => {
     if (tab === "pipeline") fetchPipeline();
     if (tab === "insights") fetchInsights();
     if (tab === "emails")   fetchSentMails();
-  }, [tab]);
+  }, [tab, fetchPipeline, fetchInsights, fetchSentMails]);
 
   useEffect(() => {
     if (emailTab === "sent") fetchSentMails();
-  }, [emailTab]);
+  }, [emailTab, fetchSentMails]);
 
   const handleProcessEmail = async (email: Email) => {
     const r = await processOne(email);
@@ -182,6 +216,34 @@ export default function DashboardPage() {
                   </button>
                 </div>
               )}
+
+              {/* Infrastructure Health Section */}
+              <div className="card" style={{ padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", marginBottom: "20px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+                  <h3 style={{ fontSize: "14px", fontWeight: 600, color: "var(--text)", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <Zap size={14} color="var(--punch)" /> Infrastructure Health
+                  </h3>
+                  <button onClick={fetchHealth} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-3)", display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", fontFamily: "'Space Mono',monospace" }}>
+                    <RefreshCw size={10} /> Sync
+                  </button>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" }} className="four-col">
+                  {[
+                    { label: "Database", value: sysStats.dbStatus, icon: Database },
+                    { label: "Latency", value: sysStats.apiLatency, icon: RefreshCw },
+                    { label: "Uptime", value: sysStats.uptime, icon: Globe },
+                    { label: "Sessions", value: sysStats.activeSessions, icon: Lock },
+                  ].map((s, i) => (
+                    <div key={i} style={{ padding: "10px", background: "var(--surface)", borderRadius: "6px", display: "flex", alignItems: "center", gap: "10px" }}>
+                      <s.icon size={12} color="var(--text-3)" />
+                      <div>
+                        <p style={{ fontSize: "10px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.02em" }}>{s.label}</p>
+                        <p style={{ fontSize: "12px", fontWeight: 600, color: s.label === "Database" ? "var(--green)" : "var(--text)" }}>{s.value}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
               <StatsBar stats={stats} overdueTasks={overdue} />
 

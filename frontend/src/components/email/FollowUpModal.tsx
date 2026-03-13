@@ -2,9 +2,7 @@
 import { useState, useEffect } from "react";
 import { X, Send, Loader2, Zap, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
-import api from "@/lib/api"; // ✅ axios ki jagah api instance
-
-const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").replace(/\/$/, "");
+import api from "@/lib/api"; // axios instance with auth token
 
 interface Props {
   email: { emailId: string; from: string; subject: string } | null;
@@ -31,7 +29,7 @@ export default function FollowUpModal({ email, onClose, onSent }: Props) {
     setStep("drafting");
     setBody("");
     try {
-      // ✅ userId nahi bhej rahe — api instance token auto-attach karega
+      // userId nahi bhej rahe — api instance token auto-attach karega
       const res = await api.post("/api/gmail/draft-followup", {
         emailId: email.emailId,
       });
@@ -66,9 +64,12 @@ export default function FollowUpModal({ email, onClose, onSent }: Props) {
     if (!body.trim()) { toast.error("Message cannot be empty"); return; }
     setStep("sending");
     try {
-      // ✅ userId nahi bhej rahe — token se milega
+      // userId nahi bhej rahe — token se milega
       await api.post("/api/gmail/send-followup", {
-        emailId: email.emailId, to, subject, body,
+        emailId: email.emailId,
+        to,
+        subject,
+        body,
       });
       toast.success("Follow-up sent!");
       setStep("done");

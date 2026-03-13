@@ -53,8 +53,15 @@ BODY:
 ${body}`;
 
   try {
+    const isXAI = apiKey.startsWith("xai-");
+    const endpoint = isXAI 
+      ? "https://api.x.ai/v1/chat/completions" 
+      : "https://api.groq.com/openai/v1/chat/completions";
+    
+    const model = isXAI ? "grok-beta" : "llama-3.3-70b-versatile";
+
     const response = await fetch(
-      "https://api.groq.com/openai/v1/chat/completions",
+      endpoint,
       {
         method: "POST",
         headers: {
@@ -62,7 +69,7 @@ ${body}`;
           "Authorization": `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
+          model: model,
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
             { role: "user", content: userPrompt },
