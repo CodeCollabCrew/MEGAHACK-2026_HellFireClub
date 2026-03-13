@@ -8,11 +8,13 @@ import rateLimit from "express-rate-limit";
 import { connectDB } from "./config/database";
 import { errorHandler } from "./middleware/errorHandler";
 import { notFound } from "./middleware/notFound";
-import taskRoutes from "./routes/task.routes";
-import emailRoutes from "./routes/email.routes";
+import authRoutes     from "./routes/auth.routes";      // ✅ NEW
+import taskRoutes     from "./routes/task.routes";
+import emailRoutes    from "./routes/email.routes";
 import pipelineRoutes from "./routes/pipeline.routes";
-import insightRoutes from "./routes/insight.routes";
-import gmailRoutes from "./routes/gmail.routes";
+import insightRoutes  from "./routes/insight.routes";
+import gmailRoutes    from "./routes/gmail.routes";
+import excelRoutes    from "./routes/excel.routes";
 import { startFollowUpCron } from "./services/followup.service";
 
 dotenv.config();
@@ -20,40 +22,46 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ─── Security ─────────────────────────────────────────────────────────────────
+// ─── Security ──────────────────────────────────────────────────────────────────
 app.use(helmet());
 app.use(cors({
   origin: [
     process.env.FRONTEND_URL || "http://localhost:3000",
-    /\.vercel\.app$/,  // Allow all Vercel preview deployments
+    /\.vercel\.app$/,
   ],
   credentials: true,
 }));
 
-const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 200 });
-app.use("/api", limiter);
+// Stricter rate limit on auth routes (prevent brute force)
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
+const apiLimiter  = rateLimit({ windowMs: 15 * 60 * 1000, max: 200 });
 
-// ─── Middleware ────────────────────────────────────────────────────────────────
+app.use("/api/auth", authLimiter);
+app.use("/api", apiLimiter);
+
+// ─── Middleware ─────────────────────────────────────────────────────────────────
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 if (process.env.NODE_ENV !== "production") app.use(morgan("dev"));
 
-// ─── Health (Render pings this to keep service alive) ─────────────────────────
+// ─── Health ─────────────────────────────────────────────────────────────────────
 app.get("/", (_req, res) => res.json({ status: "OK", service: "Smart Workspace API" }));
 app.get("/health", (_req, res) => res.json({ status: "OK", timestamp: new Date().toISOString() }));
 
-// ─── Routes ───────────────────────────────────────────────────────────────────
-app.use("/api/tasks", taskRoutes);
-app.use("/api/emails", emailRoutes);
-app.use("/api/pipeline", pipelineRoutes);
-app.use("/api/insights", insightRoutes);
-app.use("/api/gmail", gmailRoutes);
+// ─── Routes ─────────────────────────────────────────────────────────────────────
+app.use("/api/auth",     authRoutes);     // ✅ NEW — public (login/register/google)
+app.use("/api/tasks",    taskRoutes);     // protected inside route
+app.use("/api/emails",   emailRoutes);    // protected inside route
+app.use("/api/pipeline", pipelineRoutes); // protected inside route
+app.use("/api/insights", insightRoutes);  // protected inside route
+app.use("/api/gmail",    gmailRoutes);    // gmail OAuth stays separate
+app.use("/api/excel",    excelRoutes);    // Excel analysis (attachments + upload)
 
-// ─── Error Handling ───────────────────────────────────────────────────────────
+// ─── Error Handling ─────────────────────────────────────────────────────────────
 app.use(notFound);
 app.use(errorHandler);
 
-// ─── Start ────────────────────────────────────────────────────────────────────
+// ─── Start ──────────────────────────────────────────────────────────────────────
 const startServer = async () => {
   await connectDB();
   app.listen(PORT, () => {
