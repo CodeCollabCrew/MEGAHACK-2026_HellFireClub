@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Sun, Moon } from "lucide-react";
 import { useTheme } from "@/context/ThemeContext";
 import { authApi, saveToken } from "@/lib/api";
+
+export default function LoginPage() {
   const router       = useRouter();
   const { theme, toggle } = useTheme();
 
@@ -199,5 +201,3 @@ import { authApi, saveToken } from "@/lib/api";
     </div>
   );
 }
-
-export default LoginPage;
