@@ -1,8 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
 import { X, Send, Loader2, Zap, RefreshCw } from "lucide-react";
-import axios from "axios";
 import toast from "react-hot-toast";
+import api from "@/lib/api"; // ✅ axios ki jagah api instance
 
 const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000").replace(/\/$/, "");
 
@@ -20,8 +20,9 @@ export default function FollowUpModal({ email, onClose, onSent }: Props) {
   const [subject, setSubject] = useState("");
   const [body, setBody]       = useState("");
 
-  const userId = typeof window !== "undefined"
-    ? localStorage.getItem("userId") || ""
+  // ✅ userId ki zaroorat nahi — token se milega backend pe
+  const myName = typeof window !== "undefined"
+    ? (() => { try { return JSON.parse(localStorage.getItem("axon_user") || "{}").name || ""; } catch { return ""; } })()
     : "";
 
   if (!email) return null;
@@ -30,16 +31,13 @@ export default function FollowUpModal({ email, onClose, onSent }: Props) {
     setStep("drafting");
     setBody("");
     try {
-      const res = await axios.post(`${API}/api/gmail/draft-followup`, {
+      // ✅ userId nahi bhej rahe — api instance token auto-attach karega
+      const res = await api.post("/api/gmail/draft-followup", {
         emailId: email.emailId,
-        userId,
       });
 
-      const data = res.data?.data;
-      const draft = data?.draft;
-
+      const draft = res.data?.data?.draft;
       const senderName = email.from.match(/^([^<]+)/)?.[1]?.trim() || "there";
-      const myName = userId.split("@")[0];
 
       setTo(draft?.to || email.from);
       setSubject(draft?.subject || `Re: ${email.subject}`);
@@ -50,9 +48,8 @@ export default function FollowUpModal({ email, onClose, onSent }: Props) {
       setStep("review");
     } catch (err: any) {
       console.error("Draft error:", err.response?.data || err.message);
-      // Use fallback draft instead of failing
+      // Fallback draft
       const senderName = email.from.match(/^([^<]+)/)?.[1]?.trim() || "there";
-      const myName = userId.split("@")[0];
       setTo(email.from);
       setSubject(`Re: ${email.subject}`);
       setBody(
@@ -63,15 +60,15 @@ export default function FollowUpModal({ email, onClose, onSent }: Props) {
     }
   };
 
-  // Auto-draft on mount
   useEffect(() => { handleDraft(); }, []);
 
   const handleSend = async () => {
     if (!body.trim()) { toast.error("Message cannot be empty"); return; }
     setStep("sending");
     try {
-      await axios.post(`${API}/api/gmail/send-followup`, {
-        userId, emailId: email.emailId, to, subject, body,
+      // ✅ userId nahi bhej rahe — token se milega
+      await api.post("/api/gmail/send-followup", {
+        emailId: email.emailId, to, subject, body,
       });
       toast.success("Follow-up sent!");
       setStep("done");

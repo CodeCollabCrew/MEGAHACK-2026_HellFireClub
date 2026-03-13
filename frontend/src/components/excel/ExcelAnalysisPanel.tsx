@@ -35,6 +35,19 @@ export interface ExcelAnalysisResult {
   preview: Record<string, unknown>[];
 }
 
+export interface SavedExcelAnalysis extends ExcelAnalysisResult {
+  _id: string;
+  userId: string;
+  sourceType: "email" | "upload";
+  emailId?: string | null;
+  attachmentId?: string | null;
+  filename: string;
+  mimeType?: string | null;
+  size?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 type SourceTab = "email" | "upload";
 
 const STAGGER_MS = 380;
@@ -57,9 +70,9 @@ export default function ExcelAnalysisPanel() {
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef(false);
   const [hoveredUploadIndex, setHoveredUploadIndex] = useState<number | null>(null);
-  const [filterCountry, setFilterCountry] = useState<string>("All");
-  const [filterIndustry, setFilterIndustry] = useState<string>("All");
-  const [filterRisk, setFilterRisk] = useState<string>("All");
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [savedAnalyses, setSavedAnalyses] = useState<SavedExcelAnalysis[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   const fetchAttachments = useCallback(async () => {
     setLoadingAttachments(true);
@@ -76,6 +89,34 @@ export default function ExcelAnalysisPanel() {
   useEffect(() => {
     fetchAttachments();
   }, [fetchAttachments]);
+
+  useEffect(() => {
+    const loadHistory = async () => {
+      setLoadingHistory(true);
+      try {
+        const res = await excelApi.getHistory();
+        const list = (res.data?.data || []) as SavedExcelAnalysis[];
+        setSavedAnalyses(list);
+        if (!result && list.length > 0) {
+          // auto-load most recent analysis so refresh par bhi charts dikhen
+          const latest = list[0];
+          setResult({
+            summary: latest.summary,
+            insights: latest.insights,
+            recommendations: latest.recommendations,
+            columns: latest.columns,
+            rowCount: latest.rowCount,
+            preview: latest.preview,
+          });
+        }
+      } catch {
+        // ignore history error in UI
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+    loadHistory();
+  }, [result]);
 
   const runAnalysis = useCallback(async () => {
     setError(null);
@@ -197,80 +238,104 @@ export default function ExcelAnalysisPanel() {
     });
   }, [result]);
 
-  const getString = (row: Record<string, unknown>, keys: string[]): string | null => {
-    for (const k of keys) {
-      if (k in row) {
-        const v = row[k];
-        if (v === null || v === undefined) continue;
-        const s = String(v).trim();
-        if (s) return s;
-      }
-    }
-    return null;
-  };
+  const categoricalColumns = useMemo(() => {
+    if (!result?.preview?.length || !result.columns?.length) return [];
+    const rows = result.preview;
+
+    return result.columns
+      .map((col) => {
+        const values = new Set<string>();
+        let nonEmpty = 0;
+        for (const row of rows) {
+          const raw = row[col];
+          if (raw === null || raw === undefined) continue;
+          const s = String(raw).trim();
+          if (!s) continue;
+          nonEmpty += 1;
+          values.add(s);
+          if (values.size > 30) break;
+        }
+        return {
+          name: col,
+          nonEmpty,
+          distinct: Array.from(values),
+        };
+      })
+      .filter((c) => c.nonEmpty > 0 && c.distinct.length > 1 && c.distinct.length <= 30);
+  }, [result]);
 
   const filteredRows = useMemo(() => {
     if (!result?.preview) return [];
     return result.preview.filter((row) => {
-      const country = getString(row, ["Country"]);
-      const industry = getString(row, ["Industry"]);
-      const risk = getString(row, ["Risk_Level", "Risk Level"]);
-
-      if (filterCountry !== "All" && country !== filterCountry) return false;
-      if (filterIndustry !== "All" && industry !== filterIndustry) return false;
-      if (filterRisk !== "All" && risk !== filterRisk) return false;
+      for (const [col, value] of Object.entries(filters)) {
+        if (value === "All") continue;
+        const raw = (row as any)[col];
+        const s = raw === null || raw === undefined ? "" : String(raw).trim();
+        if (s !== value) return false;
+      }
       return true;
     });
-  }, [result, filterCountry, filterIndustry, filterRisk]);
-
-  const COUNTRIES_KEY = ["Country"];
-  const INDUSTRY_KEY = ["Industry"];
-  const RISK_KEY = ["Risk_Level", "Risk Level"];
-  const STRATEGY_KEY = ["Business_Strategy", "Business Strategy"];
-  const CUSTOMER_TYPE_KEY = ["Customer_Type", "Customer Type"];
+  }, [result, filters]);
 
   const uniqueFilterValues = useMemo(() => {
-    const base = result?.preview || [];
-    const countrySet = new Set<string>();
-    const industrySet = new Set<string>();
-    const riskSet = new Set<string>();
+    const base = categoricalColumns;
+    const first = base[0];
+    const second = base[1];
+    const third = base[2];
 
-    for (const row of base) {
-      const c = getString(row, COUNTRIES_KEY);
-      const i = getString(row, INDUSTRY_KEY);
-      const r = getString(row, RISK_KEY);
-      if (c) countrySet.add(c);
-      if (i) industrySet.add(i);
-      if (r) riskSet.add(r);
-    }
-
-    const toSortedArray = (s: Set<string>) => Array.from(s).sort((a, b) => a.localeCompare(b));
+    const sortValues = (vals?: string[]) =>
+      (vals || []).slice().sort((a, b) => a.localeCompare(b));
 
     return {
-      countries: toSortedArray(countrySet),
-      industries: toSortedArray(industrySet),
-      risks: toSortedArray(riskSet),
+      first,
+      second,
+      third,
+      firstValues: sortValues(first?.distinct),
+      secondValues: sortValues(second?.distinct),
+      thirdValues: sortValues(third?.distinct),
     };
-  }, [result]);
+  }, [categoricalColumns]);
 
-  const buildCounts = (keyOptions: string[]) => {
-    const rows = filteredRows;
+  const buildCounts = (columnName: string) => {
     const map = new Map<string, number>();
-    for (const row of rows) {
-      const v = getString(row, keyOptions);
-      if (!v) continue;
-      map.set(v, (map.get(v) || 0) + 1);
+    for (const row of filteredRows) {
+      const raw = (row as any)[columnName];
+      if (raw === null || raw === undefined) continue;
+      const s = String(raw).trim();
+      if (!s) continue;
+      map.set(s, (map.get(s) || 0) + 1);
     }
     const arr = Array.from(map.entries()).map(([label, value]) => ({ label, value }));
     arr.sort((a, b) => b.value - a.value);
     return arr;
   };
 
-  const industryCounts = useMemo(() => buildCounts(INDUSTRY_KEY), [filteredRows]);
-  const countryCounts = useMemo(() => buildCounts(COUNTRIES_KEY), [filteredRows]);
-  const riskCounts = useMemo(() => buildCounts(RISK_KEY), [filteredRows]);
-  const strategyCounts = useMemo(() => buildCounts(STRATEGY_KEY), [filteredRows]);
-  const customerTypeCounts = useMemo(() => buildCounts(CUSTOMER_TYPE_KEY), [filteredRows]);
+  const industryCol = categoricalColumns[0];
+  const countryCol = categoricalColumns[1];
+  const riskCol = categoricalColumns[2];
+  const strategyCol = categoricalColumns[3];
+  const customerCol = categoricalColumns[4];
+
+  const industryCounts = useMemo(
+    () => (industryCol ? buildCounts(industryCol.name) : []),
+    [filteredRows, industryCol?.name]
+  );
+  const countryCounts = useMemo(
+    () => (countryCol ? buildCounts(countryCol.name) : []),
+    [filteredRows, countryCol?.name]
+  );
+  const riskCounts = useMemo(
+    () => (riskCol ? buildCounts(riskCol.name) : []),
+    [filteredRows, riskCol?.name]
+  );
+  const strategyCounts = useMemo(
+    () => (strategyCol ? buildCounts(strategyCol.name) : []),
+    [filteredRows, strategyCol?.name]
+  );
+  const customerTypeCounts = useMemo(
+    () => (customerCol ? buildCounts(customerCol.name) : []),
+    [filteredRows, customerCol?.name]
+  );
 
   const buildPie = (counts: { label: string; value: number }[]) => {
     if (!counts.length) return null;
@@ -320,30 +385,43 @@ export default function ExcelAnalysisPanel() {
   const customerPie = useMemo(() => buildPie(customerTypeCounts), [customerTypeCounts]);
 
   const heatmap = useMemo(() => {
-    if (!filteredRows.length) return null;
-    const industries = Array.from(
-      new Set(filteredRows.map((r) => getString(r, INDUSTRY_KEY)).filter(Boolean) as string[])
-    ).sort((a, b) => a.localeCompare(b));
-    const risks = Array.from(
-      new Set(filteredRows.map((r) => getString(r, RISK_KEY)).filter(Boolean) as string[])
-    ).sort((a, b) => a.localeCompare(b));
+    if (!filteredRows.length || categoricalColumns.length < 2) return null;
+    const rowCol = categoricalColumns[0].name;
+    const colCol = categoricalColumns[1].name;
+
+    const rowSet = new Set<string>();
+    const colSet = new Set<string>();
+
+    filteredRows.forEach((row) => {
+      const rRaw = (row as any)[rowCol];
+      const cRaw = (row as any)[colCol];
+      const r = rRaw === null || rRaw === undefined ? "" : String(rRaw).trim();
+      const c = cRaw === null || cRaw === undefined ? "" : String(cRaw).trim();
+      if (r) rowSet.add(r);
+      if (c) colSet.add(c);
+    });
+
+    const industries = Array.from(rowSet).sort((a, b) => a.localeCompare(b));
+    const risks = Array.from(colSet).sort((a, b) => a.localeCompare(b));
 
     const matrix: number[][] = industries.map(() => risks.map(() => 0));
     let max = 0;
 
     filteredRows.forEach((row) => {
-      const iVal = getString(row, INDUSTRY_KEY);
-      const rVal = getString(row, RISK_KEY);
-      if (!iVal || !rVal) return;
-      const iIdx = industries.indexOf(iVal);
-      const rIdx = risks.indexOf(rVal);
+      const rRaw = (row as any)[rowCol];
+      const cRaw = (row as any)[colCol];
+      const r = rRaw === null || rRaw === undefined ? "" : String(rRaw).trim();
+      const c = cRaw === null || cRaw === undefined ? "" : String(cRaw).trim();
+      if (!r || !c) return;
+      const iIdx = industries.indexOf(r);
+      const rIdx = risks.indexOf(c);
       if (iIdx === -1 || rIdx === -1) return;
       matrix[iIdx][rIdx] += 1;
       if (matrix[iIdx][rIdx] > max) max = matrix[iIdx][rIdx];
     });
 
-    return { industries, risks, matrix, max };
-  }, [filteredRows]);
+    return { rowLabel: rowCol, colLabel: colCol, industries, risks, matrix, max };
+  }, [filteredRows, categoricalColumns]);
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: "20px", minHeight: "500px" }} className="email-grid">
@@ -528,6 +606,71 @@ export default function ExcelAnalysisPanel() {
                         </button>
                       )}
                     </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {savedAnalyses.length > 0 && (
+              <div style={{ marginTop: "8px" }}>
+                <p
+                  style={{
+                    fontSize: "11px",
+                    fontFamily: "'Space Mono',monospace",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.08em",
+                    color: "var(--text-3)",
+                    marginBottom: "6px",
+                  }}
+                >
+                  Saved analyses
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {savedAnalyses.slice(0, 5).map((sa) => (
+                    <button
+                      key={sa._id}
+                      onClick={() =>
+                        setResult({
+                          summary: sa.summary,
+                          insights: sa.insights,
+                          recommendations: sa.recommendations,
+                          columns: sa.columns,
+                          rowCount: sa.rowCount,
+                          preview: sa.preview,
+                        })
+                      }
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        padding: "8px 10px",
+                        borderRadius: "3px",
+                        border: "1px solid var(--border)",
+                        background: "var(--card)",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        width: "100%",
+                      }}
+                    >
+                      <FileSpreadsheet size={14} style={{ color: "var(--text-3)", flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: 500,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {sa.filename}
+                        </p>
+                        <p style={{ fontSize: "10px", color: "var(--text-3)" }}>
+                          {sa.sourceType === "email" ? "From email" : "Uploaded"} ·{" "}
+                          {new Date(sa.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -717,66 +860,87 @@ export default function ExcelAnalysisPanel() {
                         justifyContent: "flex-end",
                       }}
                     >
-                      <select
-                        value={filterCountry}
-                        onChange={(e) => setFilterCountry(e.target.value)}
-                        style={{
-                          fontSize: "11px",
-                          padding: "4px 8px",
-                          borderRadius: "999px",
-                          border: "1px solid var(--border)",
-                          background: "var(--card)",
-                          color: "var(--text)",
-                          minWidth: "120px",
-                        }}
-                      >
-                        <option value="All">All countries</option>
-                        {uniqueFilterValues.countries.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        value={filterIndustry}
-                        onChange={(e) => setFilterIndustry(e.target.value)}
-                        style={{
-                          fontSize: "11px",
-                          padding: "4px 8px",
-                          borderRadius: "999px",
-                          border: "1px solid var(--border)",
-                          background: "var(--card)",
-                          color: "var(--text)",
-                          minWidth: "120px",
-                        }}
-                      >
-                        <option value="All">All industries</option>
-                        {uniqueFilterValues.industries.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                      <select
-                        value={filterRisk}
-                        onChange={(e) => setFilterRisk(e.target.value)}
-                        style={{
-                          fontSize: "11px",
-                          padding: "4px 8px",
-                          borderRadius: "999px",
-                          border: "1px solid var(--border)",
-                          background: "var(--card)",
-                          color: "var(--text)",
-                          minWidth: "120px",
-                        }}
-                      >
-                        <option value="All">All risk levels</option>
-                        {uniqueFilterValues.risks.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
+                      {uniqueFilterValues.first && (
+                        <select
+                          value={filters[uniqueFilterValues.first.name] || "All"}
+                          onChange={(e) =>
+                            setFilters((prev) => ({
+                              ...prev,
+                              [uniqueFilterValues.first!.name]: e.target.value,
+                            }))
+                          }
+                          style={{
+                            fontSize: "11px",
+                            padding: "4px 8px",
+                            borderRadius: "999px",
+                            border: "1px solid var(--border)",
+                            background: "var(--card)",
+                            color: "var(--text)",
+                            minWidth: "120px",
+                          }}
+                        >
+                          <option value="All">All {uniqueFilterValues.first.name}</option>
+                          {uniqueFilterValues.firstValues.map((v) => (
+                            <option key={v} value={v}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {uniqueFilterValues.second && (
+                        <select
+                          value={filters[uniqueFilterValues.second.name] || "All"}
+                          onChange={(e) =>
+                            setFilters((prev) => ({
+                              ...prev,
+                              [uniqueFilterValues.second!.name]: e.target.value,
+                            }))
+                          }
+                          style={{
+                            fontSize: "11px",
+                            padding: "4px 8px",
+                            borderRadius: "999px",
+                            border: "1px solid var(--border)",
+                            background: "var(--card)",
+                            color: "var(--text)",
+                            minWidth: "120px",
+                          }}
+                        >
+                          <option value="All">All {uniqueFilterValues.second.name}</option>
+                          {uniqueFilterValues.secondValues.map((v) => (
+                            <option key={v} value={v}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {uniqueFilterValues.third && (
+                        <select
+                          value={filters[uniqueFilterValues.third.name] || "All"}
+                          onChange={(e) =>
+                            setFilters((prev) => ({
+                              ...prev,
+                              [uniqueFilterValues.third!.name]: e.target.value,
+                            }))
+                          }
+                          style={{
+                            fontSize: "11px",
+                            padding: "4px 8px",
+                            borderRadius: "999px",
+                            border: "1px solid var(--border)",
+                            background: "var(--card)",
+                            color: "var(--text)",
+                            minWidth: "120px",
+                          }}
+                        >
+                          <option value="All">All {uniqueFilterValues.third.name}</option>
+                          {uniqueFilterValues.thirdValues.map((v) => (
+                            <option key={v} value={v}>
+                              {v}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   </div>
 
@@ -814,7 +978,7 @@ export default function ExcelAnalysisPanel() {
                             color: "var(--text)",
                           }}
                         >
-                          Industry pie chart
+                          {industryCol ? `${industryCol.name} pie chart` : "Pie chart"}
                         </span>
                       </div>
                       {industryPie ? (
@@ -950,7 +1114,7 @@ export default function ExcelAnalysisPanel() {
                             color: "var(--text)",
                           }}
                         >
-                          Country bar chart
+                          {countryCol ? `${countryCol.name} bar chart` : "Bar chart"}
                         </span>
                       </div>
                       {countryCounts.length === 0 ? (
@@ -1046,7 +1210,7 @@ export default function ExcelAnalysisPanel() {
                             color: "var(--text)",
                           }}
                         >
-                          Risk donut chart
+                          {riskCol ? `${riskCol.name} donut chart` : "Donut chart"}
                         </span>
                       </div>
                       {riskPie ? (
@@ -1182,7 +1346,7 @@ export default function ExcelAnalysisPanel() {
                             color: "var(--text)",
                           }}
                         >
-                          Strategy column chart
+                          {strategyCol ? `${strategyCol.name} column chart` : "Column chart"}
                         </span>
                       </div>
                       {strategyCounts.length === 0 ? (
@@ -1280,7 +1444,7 @@ export default function ExcelAnalysisPanel() {
                             color: "var(--text)",
                           }}
                         >
-                          Customer type pie chart
+                          {customerCol ? `${customerCol.name} pie chart` : "Pie chart"}
                         </span>
                       </div>
                       {customerPie ? (

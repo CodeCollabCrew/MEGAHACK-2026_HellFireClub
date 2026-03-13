@@ -9,6 +9,7 @@ import {
 } from "../services/excel.service";
 import { Email } from "../models/email.model";
 import { EmailAttachment } from "../models/emailAttachment.model";
+import { ExcelAnalysis } from "../models/excelAnalysis.model";
 
 const router = Router();
 const upload = multer({
@@ -47,9 +48,23 @@ router.post(
     try {
       const userId = req.userId!;
       let buffer: Buffer;
+      let meta: {
+        sourceType: "email" | "upload";
+        emailId?: string | null;
+        attachmentId?: string | null;
+        filename: string;
+        mimeType?: string | null;
+        size?: number | null;
+      };
 
       if (req.file?.buffer) {
         buffer = req.file.buffer;
+        meta = {
+          sourceType: "upload",
+          filename: req.file.originalname || "upload.xlsx",
+          mimeType: req.file.mimetype || null,
+          size: req.file.size,
+        };
       } else {
         const { emailId, attachmentId } = req.body || {};
         if (!emailId || !attachmentId) {
@@ -67,9 +82,32 @@ router.post(
         if (!token) return sendError(res, "Gmail not connected. Connect Gmail first.", 401);
 
         buffer = await fetchGmailAttachment(token, emailId, attachmentId);
+        meta = {
+          sourceType: "email",
+          emailId,
+          attachmentId,
+          filename: att.filename,
+          mimeType: att.mimeType,
+          size: att.size,
+        };
       }
 
       const result = await analyzeExcelBuffer(buffer);
+
+      // fire-and-forget save of analysis snapshot
+      ExcelAnalysis.create({
+        userId,
+        ...meta,
+        summary: result.summary,
+        insights: result.insights,
+        recommendations: result.recommendations,
+        columns: result.columns,
+        rowCount: result.rowCount,
+        preview: result.preview,
+      }).catch((e) => {
+        console.error("ExcelAnalysis save error:", e);
+      });
+
       sendSuccess(res, result);
     } catch (err) {
       console.error("Excel analyze error:", err);
@@ -77,5 +115,20 @@ router.post(
     }
   }
 );
+
+// List saved Excel analyses (email + uploads)
+router.get("/history", authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId!;
+    const docs = await ExcelAnalysis.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(30)
+      .lean();
+    sendSuccess(res, docs);
+  } catch (err) {
+    console.error("Excel history error:", err);
+    sendError(res, "Failed to load Excel history");
+  }
+});
 
 export default router;

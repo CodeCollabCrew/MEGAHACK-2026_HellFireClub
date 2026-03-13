@@ -1,11 +1,11 @@
-import { Request, Response } from "express";
+import { Response } from "express";
 import { Task } from "../models/task.model";
 import { sendSuccess, sendError } from "../utils/response";
+import { AuthRequest } from "../middleware/auth.middleware";
 
-export const getAllTasks = async (req: Request, res: Response) => {
+export const getAllTasks = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.query.userId as string;
-    if (!userId) return sendError(res, "userId required", 400);
+    const userId = req.userId!;
     const tasks = await Task.find({ userId }).sort({ createdAt: -1 });
     sendSuccess(res, tasks);
   } catch (err) {
@@ -13,10 +13,9 @@ export const getAllTasks = async (req: Request, res: Response) => {
   }
 };
 
-export const createTask = async (req: Request, res: Response) => {
+export const createTask = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.query.userId as string;
-    if (!userId) return sendError(res, "userId required", 400);
+    const userId = req.userId!;
     const task = new Task({ ...req.body, userId });
     await task.save();
     sendSuccess(res, task, 201);
@@ -25,12 +24,15 @@ export const createTask = async (req: Request, res: Response) => {
   }
 };
 
-export const updateTask = async (req: Request, res: Response) => {
+export const updateTask = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = req.query.userId as string;
-    if (!userId) return sendError(res, "userId required", 400);
-    const task = await Task.findOneAndUpdate({ _id: id, userId }, req.body, { new: true, runValidators: true });
+    const userId = req.userId!;
+    const task = await Task.findOneAndUpdate(
+      { _id: id, userId },
+      req.body,
+      { new: true, runValidators: true }
+    );
     if (!task) return sendError(res, "Task not found", 404);
     sendSuccess(res, task);
   } catch (err) {
@@ -38,11 +40,10 @@ export const updateTask = async (req: Request, res: Response) => {
   }
 };
 
-export const deleteTask = async (req: Request, res: Response) => {
+export const deleteTask = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = req.query.userId as string;
-    if (!userId) return sendError(res, "userId required", 400);
+    const userId = req.userId!;
     const task = await Task.findOneAndDelete({ _id: id, userId });
     if (!task) return sendError(res, "Task not found", 404);
     sendSuccess(res, { message: "Task deleted" });
@@ -51,15 +52,18 @@ export const deleteTask = async (req: Request, res: Response) => {
   }
 };
 
-export const updateTaskStage = async (req: Request, res: Response) => {
+export const updateTaskStage = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const userId = req.query.userId as string;
-    if (!userId) return sendError(res, "userId required", 400);
+    const userId = req.userId!;
     const { stage } = req.body;
     const update: Record<string, unknown> = { stage };
     if (stage === "done") update.completedAt = new Date();
-    const task = await Task.findOneAndUpdate({ _id: id, userId }, update, { new: true });
+    const task = await Task.findOneAndUpdate(
+      { _id: id, userId },
+      update,
+      { new: true }
+    );
     if (!task) return sendError(res, "Task not found", 404);
     sendSuccess(res, task);
   } catch (err) {
@@ -67,10 +71,9 @@ export const updateTaskStage = async (req: Request, res: Response) => {
   }
 };
 
-export const getStats = async (req: Request, res: Response) => {
+export const getStats = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.query.userId as string;
-    if (!userId) return sendError(res, "userId required", 400);
+    const userId = req.userId!;
     const [total, urgent, overdue, done] = await Promise.all([
       Task.countDocuments({ userId }),
       Task.countDocuments({ userId, priority: "urgent", stage: { $ne: "done" } }),

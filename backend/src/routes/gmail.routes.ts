@@ -2,13 +2,14 @@ import { Router, Request, Response } from "express";
 import { fetchGmailEmails } from "../services/gmail.service";
 import { Email } from "../models/email.model";
 import { SentMail } from "../models/sentmail.model";
+import { User } from "../models/user.model";
 import { sendSuccess, sendError } from "../utils/response";
+import { authMiddleware, AuthRequest } from "../middleware/auth.middleware";
 
 const router = Router();
 const GOOGLE_AUTH_URL  = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
-// ── OAuth scopes — now includes gmail.send ────────────────────────────────────
 const SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/gmail.send",
@@ -31,7 +32,7 @@ router.get("/connect", (_req: Request, res: Response) => {
   res.redirect(url);
 });
 
-// Step 2: OAuth callback
+// Step 2: OAuth callback — ✅ FIXED userId
 router.get("/callback", async (req: Request, res: Response) => {
   const { code, error } = req.query;
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
@@ -60,21 +61,27 @@ router.get("/callback", async (req: Request, res: Response) => {
       return res.redirect(`${frontendUrl}/dashboard?gmail_error=token_failed`);
     }
 
+    // Google se email address lo
     const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
     const userInfo = await userInfoRes.json() as { email?: string };
-    const userId = userInfo.email;
-    if (!userId) return res.redirect(`${frontendUrl}/dashboard?gmail_error=no_user_email`);
+    if (!userInfo.email) return res.redirect(`${frontendUrl}/dashboard?gmail_error=no_user_email`);
 
-    // Store tokens in DB on the user's emails for future send operations
-    // We store access_token temporarily in a simple way — attach to email docs
+    // ✅ Email se MongoDB userId dhundho
+    const dbUser = await User.findOne({ email: userInfo.email.toLowerCase() });
+    if (!dbUser) return res.redirect(`${frontendUrl}/dashboard?gmail_error=user_not_found`);
+
+    const userId = dbUser._id.toString(); // ✅ Actual MongoDB _id
+
+    // Access token store karo
     await Email.updateMany({ userId }, { $set: { accessToken: tokens.access_token } });
 
+    // Emails fetch karo — userId = MongoDB _id
     const result = await fetchGmailEmails(tokens.access_token, userId, 30);
-    console.log(`Gmail fetch for ${userId}: imported ${result.imported}, errors: ${result.errors.length}`);
+    console.log(`Gmail fetch for ${userInfo.email}: imported ${result.imported}, errors: ${result.errors.length}`);
 
-    res.redirect(`${frontendUrl}/dashboard?gmail_success=true&imported=${result.imported}&user=${encodeURIComponent(userId)}`);
+    res.redirect(`${frontendUrl}/dashboard?gmail_success=true&imported=${result.imported}&user=${encodeURIComponent(userInfo.email)}`);
   } catch (err) {
     console.error("Gmail callback error:", err);
     res.redirect(`${frontendUrl}/dashboard?gmail_error=server_error`);
@@ -93,11 +100,12 @@ router.get("/auth-url", (_req: Request, res: Response) => {
   sendSuccess(res, { url, configured: true });
 });
 
-// ── AI draft follow-up ────────────────────────────────────────────────────────
-router.post("/draft-followup", async (req: Request, res: Response) => {
+// ── AI draft follow-up ✅ authMiddleware added ────────────────────────────────
+router.post("/draft-followup", authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const { emailId, userId } = req.body;
-    if (!emailId || !userId) return sendError(res, "emailId and userId required", 400);
+    const { emailId } = req.body;
+    const userId = req.userId!; // ✅ token se
+    if (!emailId) return sendError(res, "emailId required", 400);
 
     const email = await Email.findOne({ emailId, userId });
     if (!email) return sendError(res, "Email not found", 404);
@@ -128,8 +136,7 @@ From: ${email.from}
 Subject: ${email.subject}
 Body: ${email.body?.substring(0, 1000)}
 
-The sender is waiting for a reply. Write a professional follow-up from ${userId}.
-Sign off with "Best regards,\\n${userId.split("@")[0]}"`,
+Write a professional follow-up. Sign off with "Best regards,\\n${req.userEmail?.split("@")[0]}"`,
           },
         ],
         temperature: 0.7,
@@ -146,7 +153,7 @@ Sign off with "Best regards,\\n${userId.split("@")[0]}"`,
     } catch {
       draft = {
         subject: `Re: ${email.subject}`,
-        body: `Hi,\n\nFollowing up on your email regarding "${email.subject}".\n\nPlease let me know if you need anything.\n\nBest regards,\n${userId.split("@")[0]}`,
+        body: `Hi,\n\nFollowing up on your email regarding "${email.subject}".\n\nPlease let me know if you need anything.\n\nBest regards,\n${req.userEmail?.split("@")[0]}`,
         to: email.from,
       };
     }
@@ -158,15 +165,15 @@ Sign off with "Best regards,\\n${userId.split("@")[0]}"`,
   }
 });
 
-// ── Send follow-up via Gmail API ──────────────────────────────────────────────
-router.post("/send-followup", async (req: Request, res: Response) => {
+// ── Send follow-up ✅ authMiddleware added ────────────────────────────────────
+router.post("/send-followup", authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const { userId, emailId, to, subject, body } = req.body;
-    if (!userId || !emailId || !to || !subject || !body) {
+    const { emailId, to, subject, body } = req.body;
+    const userId = req.userId!; // ✅ token se
+    if (!emailId || !to || !subject || !body) {
       return sendError(res, "Missing required fields", 400);
     }
 
-    // Get access token stored during OAuth
     const emailDoc = await Email.findOne({ userId }).sort({ receivedAt: -1 }).select("accessToken");
     if (!emailDoc || !(emailDoc as any).accessToken) {
       return sendError(res, "No Gmail access token found. Please reconnect Gmail.", 401);
@@ -174,7 +181,6 @@ router.post("/send-followup", async (req: Request, res: Response) => {
 
     const accessToken = (emailDoc as any).accessToken;
 
-    // Build RFC 2822 email
     const rawEmail = [
       `To: ${to}`,
       `Subject: ${subject}`,
@@ -201,7 +207,6 @@ router.post("/send-followup", async (req: Request, res: Response) => {
       return sendError(res, gmailData.error?.message || "Failed to send email", 500);
     }
 
-    // Save to SentMail collection
     const sent = await SentMail.create({
       userId, to, subject, body,
       emailId, threadId: gmailData.threadId,
@@ -214,11 +219,10 @@ router.post("/send-followup", async (req: Request, res: Response) => {
   }
 });
 
-// ── Get sent mails ────────────────────────────────────────────────────────────
-router.get("/sent", async (req: Request, res: Response) => {
+// ── Get sent mails ✅ authMiddleware added ────────────────────────────────────
+router.get("/sent", authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const { userId } = req.query;
-    if (!userId) return sendError(res, "userId required", 400);
+    const userId = req.userId!; // ✅ token se, query se nahi
     const mails = await SentMail.find({ userId }).sort({ sentAt: -1 });
     sendSuccess(res, mails);
   } catch {
@@ -229,13 +233,12 @@ router.get("/sent", async (req: Request, res: Response) => {
 // Debug
 router.get("/debug", async (_req: Request, res: Response) => {
   const count = await Email.countDocuments();
-  const latest = await Email.find().sort({ receivedAt: -1 }).limit(3).select("userId subject from receivedAt isProcessed");
+  const latest = await Email.find().sort({ receivedAt: -1 }).limit(3).select("userId subject from receivedAt");
   sendSuccess(res, {
     emailCount: count, latest,
     config: {
       hasClientId:     !!process.env.GOOGLE_CLIENT_ID,
       hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
-      hasGroqKey:      !!process.env.GROQ_API_KEY,
       backendUrl:      process.env.BACKEND_URL || "http://localhost:5000",
       frontendUrl:     process.env.FRONTEND_URL || "http://localhost:3000",
     }

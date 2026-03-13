@@ -23,6 +23,7 @@ import WeeklyTrendChart   from "@/components/insights/WeeklyTrendChart";
 import EmailStatsCard     from "@/components/insights/EmailStatsCard";
 import CompletionRingCard from "@/components/insights/CompletionRingCard";
 import ExcelAnalysisPanel from "@/components/excel/ExcelAnalysisPanel";
+import ChartTooltip from "@/components/ui/ChartTooltip";
 import { FullPageLoader } from "@/components/ui/Spinner";
 import { Email }          from "@/types";
 import { isOverdue }      from "@/lib/utils";
@@ -326,16 +327,14 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* ── EXCEL ─────────────────────────────────────────────────────── */}
-          {tab === "excel" && (
-            <div style={{ padding: "28px" }} className="anim-up">
-              <Header
-                title="Excel Analysis"
-                subtitle="AI insights from spreadsheets · from email or upload"
-              />
-              <ExcelAnalysisPanel />
-            </div>
-          )}
+          {/* ── EXCEL (always mounted so state persists) ───────────────────── */}
+          <div style={{ display: tab === "excel" ? "block" : "none", padding: "28px" }} className="anim-up">
+            <Header
+              title="Excel Analysis"
+              subtitle="AI insights from spreadsheets · from email or upload"
+            />
+            <ExcelAnalysisPanel />
+          </div>
 
           {/* ── INSIGHTS ───────────────────────────────────────────────────── */}
           {tab === "insights" && (
@@ -349,20 +348,29 @@ export default function DashboardPage() {
                     <PriorityChart insights={insights} />
                   </div>
                   <WeeklyTrendChart insights={insights} />
-                  <div className="card" style={{ padding: "20px" }}>
-                    <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "10px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "14px" }}>Pipeline</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }} className="four-col">
-                      {[["inbox", "Inbox", "var(--text-3)"], ["in_progress", "In Progress", "var(--blue)"], ["review", "Review", "var(--yellow)"], ["done", "Done", "var(--green)"]].map(([id, lbl, c]) => {
-                        const cnt = insights.tasksByStage.find((s: any) => s._id === id)?.count ?? 0;
-                        return (
-                          <div key={id} className="card" style={{ padding: "14px", textAlign: "center" }}>
-                            <div style={{ fontFamily: "'Instrument Serif',Georgia,serif", fontSize: "32px", color: c }}>{cnt}</div>
-                            <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "10px", color: "var(--text-3)", marginTop: "4px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{lbl}</div>
-                          </div>
-                        );
-                      })}
+                  <ChartTooltip title="Pipeline stages" theory="Tasks move through these stages: Inbox (new), In Progress (being worked on), Review (needs check), Done (completed). Hover each card for details.">
+                    <div className="card" style={{ padding: "20px" }}>
+                      <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "10px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "14px" }}>Pipeline</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "10px" }} className="four-col">
+                        {[
+                          ["inbox", "Inbox", "var(--text-3)", "New tasks waiting to be picked up."],
+                          ["in_progress", "In Progress", "var(--blue)", "Tasks you're actively working on."],
+                          ["review", "Review", "var(--yellow)", "Tasks that need a final check before marking done."],
+                          ["done", "Done", "var(--green)", "Completed tasks. Contribute to your completion rate."],
+                        ].map(([id, lbl, c, theory]) => {
+                          const cnt = insights.tasksByStage.find((s: any) => s._id === id)?.count ?? 0;
+                          return (
+                            <ChartTooltip key={id} title={lbl} theory={theory as string}>
+                              <div className="card" style={{ padding: "14px", textAlign: "center", cursor: "default" }}>
+                                <div style={{ fontFamily: "'Instrument Serif',Georgia,serif", fontSize: "32px", color: c }}>{cnt}</div>
+                                <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "10px", color: "var(--text-3)", marginTop: "4px", textTransform: "uppercase", letterSpacing: "0.06em" }}>{lbl}</div>
+                              </div>
+                            </ChartTooltip>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
+                  </ChartTooltip>
                 </div>
               ) : (
                 <div style={{ display: "flex", justifyContent: "center", padding: "80px" }}>

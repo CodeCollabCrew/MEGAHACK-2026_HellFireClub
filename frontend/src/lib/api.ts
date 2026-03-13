@@ -116,6 +116,7 @@ export const excelApi = {
   },
   analyzeFromEmail: (emailId: string, attachmentId: string) =>
     api.post("/api/excel/analyze", { emailId, attachmentId }),
+  getHistory: () => api.get("/api/excel/history"),
 };
 
 export default api;

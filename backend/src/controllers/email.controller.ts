@@ -1,13 +1,13 @@
-import { Request, Response } from "express";
+import { Response } from "express";
 import { Email } from "../models/email.model";
 import { Task } from "../models/task.model";
 import { extractTasksFromEmail } from "../services/ai.service";
 import { sendSuccess, sendError } from "../utils/response";
+import { AuthRequest } from "../middleware/auth.middleware";
 
-export const getAllEmails = async (req: Request, res: Response) => {
+export const getAllEmails = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.query.userId as string;
-    if (!userId) return sendError(res, "userId required", 400);
+    const userId = req.userId!;
     const emails = await Email.find({ userId }).sort({ receivedAt: -1 }).limit(50);
     sendSuccess(res, emails);
   } catch (err) {
@@ -15,21 +15,18 @@ export const getAllEmails = async (req: Request, res: Response) => {
   }
 };
 
-export const loadMockEmails = async (req: Request, res: Response) => {
+export const loadMockEmails = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.query.userId as string;
-    if (!userId) return sendError(res, "userId required", 400);
     sendSuccess(res, { message: "Mock emails disabled in production", total: 0 });
   } catch (err) {
     sendError(res, "Failed to load mock emails");
   }
 };
 
-export const processEmail = async (req: Request, res: Response) => {
+export const processEmail = async (req: AuthRequest, res: Response) => {
   try {
     const { emailId } = req.params;
-    const userId = req.query.userId as string;
-    if (!userId) return sendError(res, "userId required", 400);
+    const userId = req.userId!;
 
     const email = await Email.findOne({ emailId, userId });
     if (!email) return sendError(res, "Email not found", 404);
@@ -71,11 +68,9 @@ export const processEmail = async (req: Request, res: Response) => {
   }
 };
 
-export const processAllEmails = async (req: Request, res: Response) => {
+export const processAllEmails = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.query.userId as string;
-    if (!userId) return sendError(res, "userId required", 400);
-
+    const userId = req.userId!;
     const unprocessed = await Email.find({ userId, isProcessed: false });
     const results = [];
 
@@ -109,7 +104,11 @@ export const processAllEmails = async (req: Request, res: Response) => {
       email.aiSummary = result.summary;
       await email.save();
 
-      results.push({ emailId: email.emailId, subject: email.subject, tasksCreated: createdTasks.length });
+      results.push({
+        emailId: email.emailId,
+        subject: email.subject,
+        tasksCreated: createdTasks.length,
+      });
       await new Promise((r) => setTimeout(r, 300));
     }
 
