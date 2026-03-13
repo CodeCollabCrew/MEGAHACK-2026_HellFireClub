@@ -1,0 +1,42 @@
+export const MOCK_EMAILS = [
+  {
+    emailId: "mock_001",
+    from: "sarah.chen@acme.com",
+    subject: "Q4 Report needs review ASAP",
+    body: "Hey, can you review the Q4 financial report and send me your feedback by Friday? It's urgent — we have a board meeting on Monday and the numbers need to be finalized. Also, please coordinate with the finance team to confirm the projections are accurate.",
+    snippet: "Can you review the Q4 financial report by Friday?",
+    receivedAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+  },
+  {
+    emailId: "mock_002",
+    from: "dev.alerts@company.io",
+    subject: "CRITICAL: Production login page broken",
+    body: "Critical issue on production. The login page is returning a 500 error for all users since the last deployment 30 minutes ago. Please investigate and fix ASAP. This is affecting all paying customers. Update the status page once you have a fix deployed.",
+    snippet: "Critical 500 error on login page affecting all users",
+    receivedAt: new Date(Date.now() - 30 * 60 * 1000),
+  },
+  {
+    emailId: "mock_003",
+    from: "marketing@company.com",
+    subject: "Newsletter content needed for next week",
+    body: "Hi! We're putting together next week's newsletter. Can you write a 200-word summary of the new product features launched last month? Also, if you have any customer success stories, please share them by Wednesday so we have time to format everything before Thursday's send.",
+    snippet: "Need newsletter content by Wednesday",
+    receivedAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
+  },
+  {
+    emailId: "mock_004",
+    from: "hr@company.com",
+    subject: "Performance review forms due this Friday",
+    body: "Reminder: All performance review self-assessment forms must be submitted by this Friday at 5 PM. Please log into the HR portal and complete your form. Also, please schedule 1-on-1 meetings with your direct reports for next week.",
+    snippet: "Performance review forms due Friday",
+    receivedAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+  },
+  {
+    emailId: "mock_005",
+    from: "client.johnson@enterprise.com",
+    subject: "Follow up on proposal",
+    body: "Hi, just following up on the proposal I sent last Tuesday. We're very interested but need a few clarifications on the pricing model and implementation timeline. Can you schedule a call this week to discuss? Our team is available Thursday or Friday afternoon.",
+    snippet: "Following up on proposal - need call this week",
+    receivedAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+  },
+];

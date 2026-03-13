@@ -1,0 +1,192 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Instrument+Serif:ital@0;1&family=Space+Mono:wght@400;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── LIGHT (default) ─────────────────────────────── */
+:root {
+  --bg:         #F0EDE8;
+  --surface:    #E8E4DE;
+  --card:       #FAFAF8;
+  --border:     #D4CFC8;
+  --text:       #111111;
+  --text-2:     #5C5850;
+  --text-3:     #9A948C;
+  --ink:        #111111;
+  --punch:      #FF4D00;          /* electric orange-red accent */
+  --punch-bg:   rgba(255,77,0,0.07);
+  --punch-bdr:  rgba(255,77,0,0.2);
+  --green:      #1A7A4A;
+  --red:        #CC2200;
+  --blue:       #1B4FD8;
+  --yellow:     #C8960C;
+}
+
+/* ─── DARK ────────────────────────────────────────── */
+.dark {
+  --bg:         #0C0C0C;
+  --surface:    #141414;
+  --card:       #1C1C1C;
+  --border:     #2A2A2A;
+  --text:       #EDEDE8;
+  --text-2:     #888880;
+  --text-3:     #444440;
+  --punch:      #FF6525;
+  --punch-bg:   rgba(255,101,37,0.08);
+  --punch-bdr:  rgba(255,101,37,0.22);
+  --green:      #34D17A;
+  --red:        #FF5540;
+  --blue:       #5B8BFF;
+  --yellow:     #F0B429;
+}
+
+/* ─── RESET ────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 14px; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Space Grotesk', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.25s, color 0.25s;
+  overflow-x: hidden;
+}
+
+/* ─── SCROLLBAR ─────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* ─── TYPOGRAPHY ────────────────────────────────────── */
+.serif { font-family: 'Instrument Serif', Georgia, serif; }
+.mono  { font-family: 'Space Mono', monospace; }
+
+/* ─── CARDS ─────────────────────────────────────────── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+/* ─── BUTTONS ───────────────────────────────────────── */
+.btn-punch {
+  background: var(--punch);
+  color: #fff;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: 3px;
+  border: none;
+  transition: opacity 0.15s, transform 0.1s;
+  cursor: pointer;
+}
+.btn-punch:hover  { opacity: 0.88; }
+.btn-punch:active { transform: scale(0.98); }
+
+.btn-outline {
+  background: transparent;
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  transition: all 0.15s;
+  cursor: pointer;
+}
+.btn-outline:hover { border-color: var(--text-3); color: var(--text); background: var(--surface); }
+
+/* ─── INPUTS ────────────────────────────────────────── */
+.input-base {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 3px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+  padding: 10px 14px;
+}
+.input-base::placeholder { color: var(--text-3); }
+.input-base:focus { border-color: var(--punch); }
+
+/* ─── NOISE GRAIN ────────────────────────────────────── */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+
+/* ─── ANIMATIONS ─────────────────────────────────────── */
+@keyframes fadeUp   { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeIn   { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideIn  { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes spin     { to { transform: rotate(360deg); } }
+
+.anim-up    { animation: fadeUp 0.4s ease-out both; }
+.anim-in    { animation: fadeIn 0.3s ease-out both; }
+.anim-slide { animation: slideIn 0.35s ease-out both; }
+.anim-spin  { animation: spin 0.8s linear infinite; }
+
+.d1 { animation-delay: 0.05s; }
+.d2 { animation-delay: 0.10s; }
+.d3 { animation-delay: 0.15s; }
+.d4 { animation-delay: 0.20s; }
+.d5 { animation-delay: 0.25s; }
+
+/* ─── SIDEBAR ITEM ───────────────────────────────────── */
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 3px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s;
+  border: 1px solid transparent;
+  color: var(--text-2);
+  background: transparent;
+  width: 100%;
+  text-align: left;
+}
+.nav-item:hover  { color: var(--text); background: var(--surface); }
+.nav-item.active { color: var(--punch); background: var(--punch-bg); border-color: var(--punch-bdr); }
+
+/* ─── HORIZONTAL RULE ────────────────────────────────── */
+.hr { height: 1px; background: var(--border); margin: 0; }
+
+/* ─── PRIORITY DOTS ──────────────────────────────────── */
+.dot-urgent { background: var(--red); }
+.dot-high   { background: var(--yellow); }
+.dot-medium { background: var(--punch); }
+.dot-low    { background: var(--green); }
+
+/* ─── TAG CHIP ───────────────────────────────────────── */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-size: 0.7rem;
+  font-family: 'Space Mono', monospace;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.chip-urgent { background: rgba(204,34,0,0.1);  color: var(--red);    border: 1px solid rgba(204,34,0,0.25); }
+.chip-high   { background: rgba(200,150,12,0.1); color: var(--yellow); border: 1px solid rgba(200,150,12,0.25); }
+.chip-medium { background: var(--punch-bg);       color: var(--punch);  border: 1px solid var(--punch-bdr); }
+.chip-low    { background: rgba(26,122,74,0.1);  color: var(--green);  border: 1px solid rgba(26,122,74,0.25); }
+
+/* dark overrides */
+.dark .chip-urgent { background: rgba(255,85,64,0.1);  color: var(--red); }
+.dark .chip-high   { background: rgba(240,180,41,0.1); color: var(--yellow); }
+.dark .chip-low    { background: rgba(52,209,122,0.1); color: var(--green); }
