@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
 import { LayoutDashboard, Mail, GitBranch, BarChart3, FileSpreadsheet, Zap, Loader2, LogIn, LogOut, Sun, Moon, Menu, X } from "lucide-react";
 import GmailConnect from "./GmailConnect";
 import { useTheme } from "@/context/ThemeContext";
@@ -26,9 +27,17 @@ const NAV = [
 ];
 
 const SB: React.CSSProperties = {
-  width: "220px", background: "var(--surface)", borderRight: "1px solid var(--border)",
-  display: "flex", flexDirection: "column", height: "100vh",
-  position: "fixed", top: 0, left: 0, zIndex: 30, overflowY: "auto",
+  width: "220px",
+  background: "var(--ivory)",
+  borderRight: "1px solid var(--border-soft)",
+  display: "flex",
+  flexDirection: "column",
+  height: "100vh",
+  position: "fixed",
+  top: 0,
+  left: 0,
+  zIndex: 30,
+  overflowY: "auto",
   transition: "transform 0.25s ease",
 };
 
@@ -39,7 +48,6 @@ export default function Sidebar({ activeTab, onTabChange, unreadCount, unprocess
 
   const handleTab = (t: Tab) => { onTabChange(t); setMobileOpen(false); };
 
-  // ✅ clearToken — cookie + localStorage dono saaf
   const handleLogout = () => {
     if (onLogout) {
       onLogout();
@@ -55,100 +63,126 @@ export default function Sidebar({ activeTab, onTabChange, unreadCount, unprocess
       ? user.email.split("@")[0]
       : "";
 
-  const content = (
-    <>
-      {/* Logo */}
-      <div style={{ padding: "18px 16px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <div style={{ width: "30px", height: "30px", background: "var(--punch)", borderRadius: "3px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-          </div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: "15px", letterSpacing: "-0.02em", color: "var(--text)", lineHeight: 1 }}>axon</div>
-            <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "9px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: "2px" }}>AI Workspace</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Nav */}
-      <nav style={{ flex: 1, padding: "12px 10px", display: "flex", flexDirection: "column", gap: "2px" }}>
-        <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "9px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.1em", padding: "4px 10px 10px" }}>Workspace</div>
-
+  const navContent = (
+    <nav style={{ flex: 1, padding: "12px 10px", display: "flex", flexDirection: "column", gap: "2px" }}>
+      <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "9px", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.1em", padding: "4px 10px 10px" }}>Workspace</div>
+      <div style={{ position: "relative" }}>
         {NAV.map(({ id, icon: Icon, label }) => (
-          <button key={id} onClick={() => handleTab(id)}
+          <motion.button
+            key={id}
+            onClick={() => handleTab(id)}
+            className="sidebar-nav-btn"
             style={{
-              display: "flex", alignItems: "center", gap: "10px", padding: "9px 12px", borderRadius: "3px",
-              fontSize: "13px", fontWeight: 500, cursor: "pointer", border: "1px solid transparent",
-              background: activeTab === id ? "var(--punch-bg)" : "transparent",
-              color: activeTab === id ? "var(--punch)" : "var(--text-2)",
-              borderColor: activeTab === id ? "var(--punch-bdr)" : "transparent",
-              transition: "all 0.12s", width: "100%", textAlign: "left"
-            }}>
-            <Icon size={14} strokeWidth={activeTab === id ? 2.5 : 1.8} />
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              padding: "9px 12px",
+              borderRadius: "10px",
+              fontSize: "13px",
+              fontWeight: 500,
+              cursor: "pointer",
+              border: "none",
+              background: "transparent",
+              color: activeTab === id ? "var(--cocoa)" : "var(--text-secondary)",
+              width: "100%",
+              textAlign: "left",
+              position: "relative",
+            }}
+            whileHover={{ background: "rgba(74,52,40,0.06)" }}
+            whileTap={{ scale: 0.98 }}
+          >
+            {activeTab === id && (
+              <motion.div
+                layoutId="sidebar-indicator"
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  top: 0,
+                  bottom: 0,
+                  width: "3px",
+                  background: "var(--cocoa)",
+                  borderRadius: "0 3px 3px 0",
+                }}
+                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              />
+            )}
+            <Icon size={14} strokeWidth={activeTab === id ? 2.5 : 1.8} style={{ flexShrink: 0 }} />
             <span style={{ flex: 1 }}>{label}</span>
             {id === "emails" && unreadCount > 0 && (
-              <span style={{ background: "var(--punch)", color: "#fff", fontSize: "10px", fontFamily: "'Space Mono',monospace", fontWeight: 700, padding: "1px 6px", borderRadius: "2px" }}>
+              <span style={{ background: "var(--cocoa)", color: "#fff", fontSize: "10px", fontFamily: "'Space Mono',monospace", fontWeight: 700, padding: "1px 6px", borderRadius: "6px" }}>
                 {unreadCount > 9 ? "9+" : unreadCount}
               </span>
             )}
-          </button>
+          </motion.button>
         ))}
-
-        {/* Status */}
-        <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: "6px" }}>
-          <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "9px", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.1em", padding: "0 10px 4px" }}>Status</div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 10px", borderRadius: "3px", background: "var(--card)", border: "1px solid var(--border)" }}>
-            <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--green)" }} />
-            <span style={{ fontSize: "12px", color: "var(--text-2)" }}>Online</span>
-          </div>
-          {unprocessedCount > 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 10px", borderRadius: "3px", background: "var(--punch-bg)", border: "1px solid var(--punch-bdr)" }}>
-              <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--punch)" }} />
-              <span style={{ fontSize: "12px", color: "var(--punch)" }}>{unprocessedCount} awaiting AI</span>
-            </div>
-          )}
+      </div>
+      <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1px solid var(--border-soft)", display: "flex", flexDirection: "column", gap: "6px" }}>
+        <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "9px", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.1em", padding: "0 10px 4px" }}>Status</div>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 10px", borderRadius: "10px", background: "var(--white)", border: "1px solid var(--border-soft)" }}>
+          <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--green)" }} />
+          <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Online</span>
         </div>
-      </nav>
+        {unprocessedCount > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "7px 10px", borderRadius: "10px", background: "var(--punch-bg)", border: "1px solid var(--punch-bdr)" }}>
+            <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--cocoa)" }} />
+            <span style={{ fontSize: "12px", color: "var(--cocoa)" }}>{unprocessedCount} awaiting AI</span>
+          </div>
+        )}
+      </div>
+    </nav>
+  );
 
-      {/* Bottom */}
-      <div style={{ padding: "12px 10px", borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: "8px" }}>
+  const content = (
+    <>
+      <div style={{ padding: "18px 16px 14px", borderBottom: "1px solid var(--border-soft)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{ width: "30px", height: "30px", background: "var(--cocoa)", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: "15px", letterSpacing: "-0.02em", color: "var(--text-primary)", lineHeight: 1 }}>axon</div>
+            <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "9px", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: "2px" }}>AI Workspace</div>
+          </div>
+        </div>
+      </div>
+      {navContent}
+      <div style={{ padding: "12px 10px", borderTop: "1px solid var(--border-soft)", display: "flex", flexDirection: "column", gap: "8px" }}>
         <GmailConnect onImported={onEmailsImported} />
         <button onClick={onProcessAll} disabled={processingEmails} className="btn-punch"
-          style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", fontSize: "13px", opacity: processingEmails ? 0.6 : 1 }}>
+          style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 14px", fontSize: "13px", opacity: processingEmails ? 0.6 : 1, borderRadius: "10px", background: "var(--cocoa)", color: "#fff" }}>
           {processingEmails ? <Loader2 size={13} className="anim-spin" /> : <Zap size={13} fill="white" color="white" />}
           Process with AI
           {unprocessedCount > 0 && (
-            <span style={{ marginLeft: "auto", background: "rgba(255,255,255,0.2)", fontFamily: "'Space Mono',monospace", fontSize: "11px", padding: "1px 6px", borderRadius: "2px" }}>
+            <span style={{ marginLeft: "auto", background: "rgba(255,255,255,0.2)", fontFamily: "'Space Mono',monospace", fontSize: "11px", padding: "1px 6px", borderRadius: "6px" }}>
               {unprocessedCount}
             </span>
           )}
         </button>
-        <div style={{ height: "1px", background: "var(--border)" }} />
-
+        <div style={{ height: "1px", background: "var(--border-soft)" }} />
         {user ? (
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <div style={{ width: "28px", height: "28px", borderRadius: "3px", background: "var(--punch-bg)", border: "1px solid var(--punch-bdr)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "var(--punch)", fontFamily: "'Space Mono',monospace", fontSize: "12px", fontWeight: 700 }}>
+            <div style={{ width: "28px", height: "28px", borderRadius: "8px", background: "var(--punch-bg)", border: "1px solid var(--punch-bdr)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "var(--cocoa)", fontFamily: "'Space Mono',monospace", fontSize: "12px", fontWeight: 700 }}>
               {user.name[0].toUpperCase()}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: "12px", fontWeight: 500, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</div>
-              <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "10px", color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{userSubtitle}</div>
+              <div style={{ fontSize: "12px", fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</div>
+              <div style={{ fontFamily: "'Space Mono',monospace", fontSize: "10px", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{userSubtitle}</div>
             </div>
-            <button onClick={toggle} className="btn-outline" style={{ width: "28px", height: "28px", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <button onClick={toggle} className="btn-outline" style={{ width: "28px", height: "28px", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, borderRadius: "8px" }}>
               {theme === "dark" ? <Sun size={12} /> : <Moon size={12} />}
             </button>
             <button onClick={handleLogout} className="btn-outline"
-              style={{ width: "28px", height: "28px", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <LogOut size={12} style={{ color: "var(--text-3)" }} />
+              style={{ width: "28px", height: "28px", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, borderRadius: "8px" }}>
+              <LogOut size={12} style={{ color: "var(--text-secondary)" }} />
             </button>
           </div>
         ) : (
           <div style={{ display: "flex", gap: "6px" }}>
             <button onClick={() => router.push("/login")} className="btn-punch"
-              style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "8px 12px", fontSize: "12px" }}>
+              style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "8px 12px", fontSize: "12px", borderRadius: "10px", background: "var(--cocoa)", color: "#fff" }}>
               <LogIn size={12} /> Sign in
             </button>
-            <button onClick={toggle} className="btn-outline" style={{ width: "34px", height: "34px", padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <button onClick={toggle} className="btn-outline" style={{ width: "34px", height: "34px", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "8px" }}>
               {theme === "dark" ? <Sun size={13} /> : <Moon size={13} />}
             </button>
           </div>
@@ -159,71 +193,65 @@ export default function Sidebar({ activeTab, onTabChange, unreadCount, unprocess
 
   return (
     <>
-      {/* Desktop sidebar */}
       <aside style={{ ...SB, transform: "none" }} className="sidebar-desktop">
         {content}
       </aside>
-
-      {/* Mobile top bar */}
-      <div style={{ display: "none", position: "fixed", top: 0, left: 0, right: 0, zIndex: 29, background: "var(--surface)", borderBottom: "1px solid var(--border)", padding: "12px 16px", alignItems: "center", justifyContent: "space-between" }} className="mobile-topbar">
+      <div style={{ display: "none", position: "fixed", top: 0, left: 0, right: 0, zIndex: 29, background: "var(--ivory)", borderBottom: "1px solid var(--border-soft)", padding: "12px 16px", alignItems: "center", justifyContent: "space-between" }} className="mobile-topbar">
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <div style={{ width: "26px", height: "26px", background: "var(--punch)", borderRadius: "3px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ width: "26px", height: "26px", background: "var(--cocoa)", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="white"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           </div>
-          <span style={{ fontWeight: 700, fontSize: "14px", color: "var(--text)" }}>axon</span>
+          <span style={{ fontWeight: 700, fontSize: "14px", color: "var(--text-primary)" }}>axon</span>
         </div>
-        <button onClick={() => setMobileOpen(true)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-2)", display: "flex" }}>
+        <button onClick={() => setMobileOpen(true)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", display: "flex" }}>
           <Menu size={20} />
         </button>
       </div>
-
-      {/* Mobile drawer */}
       {mobileOpen && (
         <>
-          <div onClick={() => setMobileOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 28 }} />
+          <div onClick={() => setMobileOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", zIndex: 28 }} />
           <aside style={{ ...SB, width: "260px", transform: "none" }}>
-            <div style={{ padding: "18px 16px 14px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ padding: "18px 16px 14px", borderBottom: "1px solid var(--border-soft)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <div style={{ width: "30px", height: "30px", background: "var(--punch)", borderRadius: "3px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <div style={{ width: "30px", height: "30px", background: "var(--cocoa)", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                 </div>
-                <span style={{ fontWeight: 700, fontSize: "15px", color: "var(--text)" }}>axon</span>
+                <span style={{ fontWeight: 700, fontSize: "15px", color: "var(--text-primary)" }}>axon</span>
               </div>
-              <button onClick={() => setMobileOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-3)", display: "flex" }}><X size={18} /></button>
+              <button onClick={() => setMobileOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)", display: "flex" }}><X size={18} /></button>
             </div>
             <nav style={{ flex: 1, padding: "12px 10px", display: "flex", flexDirection: "column", gap: "2px" }}>
               {NAV.map(({ id, icon: Icon, label }) => (
                 <button key={id} onClick={() => handleTab(id)}
                   style={{
-                    display: "flex", alignItems: "center", gap: "10px", padding: "11px 12px", borderRadius: "3px",
-                    fontSize: "14px", fontWeight: 500, cursor: "pointer", border: "1px solid transparent",
+                    display: "flex", alignItems: "center", gap: "10px", padding: "11px 12px", borderRadius: "10px",
+                    fontSize: "14px", fontWeight: 500, cursor: "pointer", border: "none",
                     background: activeTab === id ? "var(--punch-bg)" : "transparent",
-                    color: activeTab === id ? "var(--punch)" : "var(--text-2)",
-                    borderColor: activeTab === id ? "var(--punch-bdr)" : "transparent",
+                    color: activeTab === id ? "var(--cocoa)" : "var(--text-secondary)",
                     width: "100%", textAlign: "left"
                   }}>
                   <Icon size={15} /><span>{label}</span>
                   {id === "emails" && unreadCount > 0 && (
-                    <span style={{ background: "var(--punch)", color: "#fff", fontSize: "10px", fontFamily: "'Space Mono',monospace", fontWeight: 700, padding: "1px 6px", borderRadius: "2px", marginLeft: "auto" }}>
+                    <span style={{ background: "var(--cocoa)", color: "#fff", fontSize: "10px", fontFamily: "'Space Mono',monospace", fontWeight: 700, padding: "1px 6px", borderRadius: "6px", marginLeft: "auto" }}>
                       {unreadCount > 9 ? "9+" : unreadCount}
                     </span>
                   )}
                 </button>
               ))}
             </nav>
-            <div style={{ padding: "12px 10px", borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: "8px" }}>
+            <div style={{ padding: "12px 10px", borderTop: "1px solid var(--border-soft)", display: "flex", flexDirection: "column", gap: "8px" }}>
               <button onClick={onProcessAll} disabled={processingEmails} className="btn-punch"
-                style={{ display: "flex", alignItems: "center", gap: "8px", padding: "11px 14px", fontSize: "13px" }}>
+                style={{ display: "flex", alignItems: "center", gap: "8px", padding: "11px 14px", fontSize: "13px", borderRadius: "10px", background: "var(--cocoa)", color: "#fff" }}>
                 <Zap size={13} fill="white" color="white" /> Process with AI
               </button>
               {user ? (
                 <button onClick={handleLogout} className="btn-outline"
-                  style={{ padding: "9px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
+                  style={{ padding: "9px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", borderRadius: "10px" }}>
                   <LogOut size={12} /> Sign out
                 </button>
               ) : (
                 <button onClick={() => router.push("/login")} className="btn-punch"
-                  style={{ padding: "9px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
+                  style={{ padding: "9px", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", borderRadius: "10px", background: "var(--cocoa)", color: "#fff" }}>
                   <LogIn size={12} /> Sign in
                 </button>
               )}
@@ -231,7 +259,6 @@ export default function Sidebar({ activeTab, onTabChange, unreadCount, unprocess
           </aside>
         </>
       )}
-
       <style>{`
         @media (max-width: 768px) {
           .sidebar-desktop { display: none !important; }
