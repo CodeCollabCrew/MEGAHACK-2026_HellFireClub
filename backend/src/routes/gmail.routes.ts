@@ -141,40 +141,43 @@ router.post("/draft-followup", authMiddleware, async (req: AuthRequest, res: Res
       : "https://api.groq.com/openai/v1/chat/completions";
     
     const model = isXAI ? "grok-beta" : "llama3-8b-8192";
-
-    const groqRes = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [
-          {
-            role: "system",
-            content: `You are a professional email assistant. Write a concise, polite follow-up reply.
+    const groqBody = JSON.stringify({
+      model: model,
+      messages: [
+        {
+          role: "system",
+          content: `You are a professional email assistant. Write a concise, polite follow-up reply.
 Return ONLY a JSON object with this exact structure (no markdown, no extra text):
 {
   "subject": "Re: <original subject>",
   "body": "<email body with \\n for line breaks>",
   "to": "<sender email>"
 }`,
-          },
-          {
-            role: "user",
-            content: `Original email:
+        },
+        {
+          role: "user",
+          content: `Original email:
 From: ${email.from}
 Subject: ${email.subject}
 Body: ${email.body?.substring(0, 1000)}
 
 Write a professional follow-up. Sign off with "Best regards,\\n${req.userEmail?.split("@")[0]}"`,
-          },
-        ],
-        temperature: 0.7,
-        max_tokens: 500,
-      }),
+        },
+      ],
+      temperature: 0.7,
+      max_tokens: 500,
     });
+    const groqOpts = { method: "POST" as const, headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` }, body: groqBody };
+
+    let groqRes = await fetch(endpoint, groqOpts);
+    if (groqRes.status === 429) {
+      await new Promise((r) => setTimeout(r, 3000));
+      groqRes = await fetch(endpoint, groqOpts);
+    }
+    if (!groqRes.ok) {
+      const msg = groqRes.status === 429 ? "AI rate limit. Try again in a minute." : "AI request failed.";
+      return sendError(res, msg, groqRes.status === 429 ? 429 : 502);
+    }
 
     const groqData = await groqRes.json() as any;
     const raw = groqData.choices?.[0]?.message?.content || "{}";

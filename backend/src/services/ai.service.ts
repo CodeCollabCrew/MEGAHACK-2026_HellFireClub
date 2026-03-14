@@ -60,30 +60,36 @@ ${body}`;
     
     const model = isXAI ? "grok-beta" : "llama-3.3-70b-versatile";
 
-    const response = await fetch(
-      endpoint,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: userPrompt },
-          ],
-          temperature: 0.1,
-          max_tokens: 1500,
-        }),
-      }
-    );
+    const doFetch = () => fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.1,
+        max_tokens: 1500,
+      }),
+    });
+
+    let response = await doFetch();
+    if (response.status === 429) {
+      await new Promise((r) => setTimeout(r, 3000));
+      response = await doFetch();
+    }
 
     if (!response.ok) {
       const errText = await response.text();
       console.error("Groq API error:", response.status, errText);
-      return { hasActionItems: false, tasks: [], summary: `Groq API error: ${response.status}`, needsFollowUp: false };
+      const msg = response.status === 429
+        ? "AI rate limit reached. Please try again in a minute."
+        : `AI error: ${response.status}`;
+      return { hasActionItems: false, tasks: [], summary: msg, needsFollowUp: false };
     }
 
     const data = await response.json() as {

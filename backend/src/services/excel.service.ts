@@ -60,26 +60,28 @@ export async function analyzeExcelBuffer(buffer: Buffer): Promise<ExcelAnalysisR
 
   if (apiKey && columns.length > 0 && rows.length > 0) {
     try {
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: "llama-3.3-70b-versatile",
-          messages: [
-            { role: "system", content: EXCEL_SYSTEM_PROMPT },
-            {
-              role: "user",
-              content: `Analyze this spreadsheet data (columns: ${columns.join(", ")}). Sample rows:\n${dataSample}`,
-            },
-          ],
-          temperature: 0.3,
-          max_tokens: 800,
-        }),
+      const body = JSON.stringify({
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          { role: "system", content: EXCEL_SYSTEM_PROMPT },
+          { role: "user", content: `Analyze this spreadsheet data (columns: ${columns.join(", ")}). Sample rows:\n${dataSample}` },
+        ],
+        temperature: 0.3,
+        max_tokens: 800,
       });
-
+      let res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body,
+      });
+      if (res.status === 429) {
+        await new Promise((r) => setTimeout(r, 3000));
+        res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+          body,
+        });
+      }
       if (res.ok) {
         const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
         const raw = data?.choices?.[0]?.message?.content || "{}";
@@ -91,6 +93,8 @@ export async function analyzeExcelBuffer(buffer: Buffer): Promise<ExcelAnalysisR
           insights = Array.isArray(parsed.insights) ? parsed.insights : [];
           recommendations = Array.isArray(parsed.recommendations) ? parsed.recommendations : [];
         }
+      } else if (res.status === 429) {
+        summary = "AI rate limit reached. Please try again in a minute.";
       }
     } catch (e) {
       console.error("Excel AI analysis error:", e);
