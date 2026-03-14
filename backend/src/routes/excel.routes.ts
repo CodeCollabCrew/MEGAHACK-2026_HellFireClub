@@ -1,5 +1,5 @@
-import { Router, Response } from "express";
-import multer from "multer";
+import { Router, Response, Request } from "express";
+import multer, { FileFilterCallback } from "multer";
 import { authMiddleware, AuthRequest } from "../middleware/auth.middleware";
 import { sendSuccess, sendError } from "../utils/response";
 import {
@@ -15,7 +15,7 @@ const router = Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
+  fileFilter: (_req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
     const name = (file.originalname || "").toLowerCase();
     const ok =
       name.endsWith(".xlsx") ||
@@ -39,12 +39,16 @@ router.get("/attachments", authMiddleware, async (req: AuthRequest, res: Respons
   }
 });
 
+interface AnalyzeRequest extends AuthRequest {
+  file?: Express.Multer.File;
+}
+
 // Analyze Excel: either from email attachment or file upload
 router.post(
   "/analyze",
   authMiddleware,
   upload.single("file"),
-  async (req: AuthRequest, res: Response) => {
+  async (req: AnalyzeRequest, res: Response) => {
     try {
       const userId = req.userId!;
       let buffer: Buffer;
