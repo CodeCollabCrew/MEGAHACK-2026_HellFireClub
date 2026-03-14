@@ -123,7 +123,7 @@ export default function FollowUpModal({ email, onClose, onSent }: Props) {
               <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                 <div>
                   <label style={{ fontSize: "11px", color: "var(--text-3)", fontFamily: "'Space Mono',monospace", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: "5px" }}>To</label>
-                  <input value={to} onChange={e => setTo(e.target.value)} style={{ width: "100%", fontSize: "13px" }} />
+                  <input value={to} onChange={e => setTo(e.target.value)} style={{ width: "100%", fontSize: "13px", color: "#111" }} />
                 </div>
                 <div>
                   <label style={{ fontSize: "11px", color: "var(--text-3)", fontFamily: "'Space Mono',monospace", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: "5px" }}>Subject</label>
@@ -133,7 +133,7 @@ export default function FollowUpModal({ email, onClose, onSent }: Props) {
                   <label style={{ fontSize: "11px", color: "var(--text-3)", fontFamily: "'Space Mono',monospace", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: "5px" }}>Message</label>
                   <textarea value={body} onChange={e => setBody(e.target.value)}
                     rows={10}
-                    style={{ width: "100%", fontSize: "13px", resize: "vertical", fontFamily: "inherit", lineHeight: 1.6 }} />
+                    style={{ width: "100%", fontSize: "13px", resize: "vertical", fontFamily: "inherit", lineHeight: 1.6, color: "#111" }} />
                 </div>
               </div>
 
