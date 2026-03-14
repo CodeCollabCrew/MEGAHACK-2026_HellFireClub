@@ -3,6 +3,7 @@ import { User } from "../models/user.model";
 import { sendSuccess, sendError } from "../utils/response";
 import { generateTokens, authMiddleware, AuthRequest } from "../middleware/auth.middleware";
 import { log } from "../utils/logger";
+import { getFrontendUrl } from "../utils/url";
 
 const router = Router();
 
@@ -113,7 +114,7 @@ router.get("/google", (_req: Request, res: Response) => {
 // ── Google OAuth — Step 2: Callback ──────────────────────────────────────────
 router.get("/google/callback", async (req: Request, res: Response) => {
   const { code, error } = req.query;
-  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+  const frontendUrl = getFrontendUrl();
 
   if (error || !code) {
     return res.redirect(`${frontendUrl}/login?error=google_denied`);

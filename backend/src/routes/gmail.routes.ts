@@ -4,6 +4,7 @@ import { Email } from "../models/email.model";
 import { SentMail } from "../models/sentmail.model";
 import { User } from "../models/user.model";
 import { sendSuccess, sendError } from "../utils/response";
+import { getFrontendUrl } from "../utils/url";
 import { authMiddleware, AuthRequest } from "../middleware/auth.middleware";
 
 const router = Router();
@@ -39,7 +40,7 @@ router.get("/connect", (req: Request, res: Response) => {
 // Step 2: OAuth callback — ✅ FIXED userId
 router.get("/callback", async (req: Request, res: Response) => {
   const { code, error, state } = req.query;
-  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+  const frontendUrl = getFrontendUrl();
 
   let role = "user";
   if (state) {
@@ -271,7 +272,7 @@ router.get("/debug", async (_req: Request, res: Response) => {
       hasClientId:     !!process.env.GOOGLE_CLIENT_ID,
       hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
       backendUrl:      process.env.BACKEND_URL || "http://localhost:5000",
-      frontendUrl:     process.env.FRONTEND_URL || "http://localhost:3000",
+      frontendUrl:     getFrontendUrl(),
     }
   });
 });
