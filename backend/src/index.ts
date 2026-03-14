@@ -34,8 +34,8 @@ app.use(
 );
 
 // Stricter rate limit on auth routes (prevent brute force)
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
-const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 200 });
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 30 });
+const apiLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 1000 });
 
 app.use("/api/auth", authLimiter);
 app.use("/api", apiLimiter);
