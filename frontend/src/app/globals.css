@@ -4,41 +4,53 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── DESIGN SYSTEM (Axon AI Workspace) ─────────────── */
+:root {
+  --ivory:        #FFFFF5;
+  --cocoa:        #4A3428;
+  --cocoa-soft:   #6B4A3A;
+  --cocoa-light:  #8B6B5A;
+  --white:        #FFFFFF;
+  --border-soft:  #EFE8E2;
+  --text-primary: #2A1E18;
+  --text-secondary: #6B5A50;
+}
+
 /* ─── LIGHT (default) ─────────────────────────────── */
 :root {
-  --bg:         #F0EDE8;
-  --surface:    #E8E4DE;
-  --card:       #FAFAF8;
-  --border:     #D4CFC8;
-  --text:       #111111;
-  --text-2:     #5C5850;
+  --bg:         var(--ivory);
+  --surface:    #F8F6F2;
+  --card:       var(--white);
+  --border:     var(--border-soft);
+  --text:       var(--text-primary);
+  --text-2:     var(--text-secondary);
   --text-3:     #9A948C;
-  --ink:        #111111;
-  --punch:      #FF4D00;          /* electric orange-red accent */
-  --punch-bg:   rgba(255,77,0,0.07);
-  --punch-bdr:  rgba(255,77,0,0.2);
+  --ink:        var(--text-primary);
+  --punch:      var(--cocoa);
+  --punch-bg:   rgba(74,52,40,0.08);
+  --punch-bdr:  rgba(74,52,40,0.18);
   --green:      #1A7A4A;
   --red:        #CC2200;
   --blue:       #1B4FD8;
   --yellow:     #C8960C;
 }
 
-/* ─── DARK ────────────────────────────────────────── */
+/* ─── DARK (warm cocoa, no black/orange) ───────────── */
 .dark {
-  --bg:         #0C0C0C;
-  --surface:    #141414;
-  --card:       #1C1C1C;
-  --border:     #2A2A2A;
-  --text:       #EDEDE8;
-  --text-2:     #888880;
-  --text-3:     #444440;
-  --punch:      #FF6525;
-  --punch-bg:   rgba(255,101,37,0.08);
-  --punch-bdr:  rgba(255,101,37,0.22);
+  --bg:         #2A1E18;
+  --surface:    #3A2A21;
+  --card:       #3A2A21;
+  --border:     rgba(255,255,245,0.12);
+  --text:       #FFFFF5;
+  --text-2:     rgba(255,255,245,0.75);
+  --text-3:     rgba(255,255,245,0.5);
+  --punch:      var(--cocoa-light);
+  --punch-bg:   rgba(139,107,90,0.2);
+  --punch-bdr:  rgba(139,107,90,0.4);
   --green:      #34D17A;
-  --red:        #FF5540;
-  --blue:       #5B8BFF;
-  --yellow:     #F0B429;
+  --red:        #E87A6A;
+  --blue:       #7BA3FF;
+  --yellow:     #E8C547;
 }
 
 /* ─── RESET ────────────────────────────────────────── */
@@ -67,7 +79,7 @@ body {
 .card {
   background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 18px;
 }
 
 /* ─── BUTTONS ───────────────────────────────────────── */
@@ -110,6 +122,35 @@ body {
 .input-base::placeholder { color: var(--text-3); }
 .input-base:focus { border-color: var(--punch); }
 
+/* ─── LOGIN PAGE (premium SaaS inputs) ───────────────── */
+.login-input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-soft);
+  background: var(--white);
+  color: var(--text-primary);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.login-input::placeholder { color: var(--text-secondary); opacity: 0.8; }
+.login-input:focus {
+  border-color: var(--cocoa);
+  box-shadow: 0 0 0 3px rgba(74,52,40,0.1);
+}
+.dark .login-input {
+  background: rgba(255,255,245,0.06);
+  border-color: rgba(255,255,245,0.15);
+  color: var(--ivory);
+}
+.dark .login-input::placeholder { color: rgba(255,255,245,0.4); }
+.dark .login-input:focus {
+  border-color: var(--cocoa-light);
+  box-shadow: 0 0 0 3px rgba(196,167,125,0.15);
+}
+
 /* ─── NOISE GRAIN ────────────────────────────────────── */
 body::after {
   content: '';
@@ -127,11 +168,13 @@ body::after {
 @keyframes fadeIn   { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideIn  { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes spin     { to { transform: rotate(360deg); } }
+@keyframes pulseGreen { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.7; transform: scale(1.15); } }
 
 .anim-up    { animation: fadeUp 0.4s ease-out both; }
 .anim-in    { animation: fadeIn 0.3s ease-out both; }
 .anim-slide { animation: slideIn 0.35s ease-out both; }
 .anim-spin  { animation: spin 0.8s linear infinite; }
+.anim-pulse-green { animation: pulseGreen 2s ease-in-out infinite; }
 
 .d1 { animation-delay: 0.05s; }
 .d2 { animation-delay: 0.10s; }

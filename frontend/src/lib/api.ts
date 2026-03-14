@@ -14,14 +14,39 @@ const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
+// ── Dev bypass (development-only fallback when backend is unavailable) ─────────
+const DEV_BYPASS_PREFIX = "dev-bypass-";
+
+export function isDevBypassToken(token: string | null): boolean {
+  return typeof token === "string" && token.startsWith(DEV_BYPASS_PREFIX);
+}
+
+/** In development, create a temporary session so the UI can be used without a running backend. */
+export function createDevSession(email: string, name?: string): void {
+  if (typeof window === "undefined") return;
+  const devToken = `${DEV_BYPASS_PREFIX}${Date.now()}`;
+  const user = {
+    name: name || email.split("@")[0] || "Dev User",
+    email,
+    isGuest: false,
+  };
+  saveToken(devToken);
+  localStorage.setItem("axon_user", JSON.stringify(user));
+}
+
+export function isDevelopment(): boolean {
+  return process.env.NODE_ENV === "development";
+}
+
 // ── Cookie helpers ────────────────────────────────────────────────────────────
 export function saveToken(token: string) {
+  if (typeof window === "undefined") return;
   localStorage.setItem("axon_token", token);
-  // middleware cookie padhta hai — dono jagah save karo
   document.cookie = `axon_token=${token}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`;
 }
 
 export function clearToken() {
+  if (typeof window === "undefined") return;
   localStorage.removeItem("axon_token");
   localStorage.removeItem("axon_user");
   document.cookie = "axon_token=; path=/; max-age=0";
@@ -40,11 +65,13 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      if (typeof window !== "undefined") {
-        clearToken();
-        window.location.href = "/login";
+    if (error.response?.status === 401 && typeof window !== "undefined") {
+      const token = localStorage.getItem("axon_token");
+      if (isDevelopment() && isDevBypassToken(token)) {
+        return Promise.reject(error);
       }
+      clearToken();
+      window.location.href = "/login";
     }
     return Promise.reject(error);
   }
