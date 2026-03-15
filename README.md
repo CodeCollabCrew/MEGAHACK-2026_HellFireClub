@@ -1,6 +1,8 @@
-# 🧠 Smart AI Workspace Platform
+# 🧠 Axon — AI Workspace Platform
 
 > AI-powered productivity platform that converts emails into structured workflows, extracts tasks automatically, and sends follow-ups—straight from your Gmail inbox.
+
+🔗 **Live App:** [megahack-2026-hell-fire-club.vercel.app](https://megahack-2026-hell-fire-club.vercel.app/)
 
 ---
 
@@ -192,7 +194,7 @@ JWT_SECRET=your-random-32-char-string
    - Framework: Next.js (auto)
 3. **Environment Variables:**
    - `NEXT_PUBLIC_API_URL` = `https://your-render-url.onrender.com`
-4. Deploy  
+4. Deploy → Live at [megahack-2026-hell-fire-club.vercel.app](https://megahack-2026-hell-fire-club.vercel.app/)
 
 ---
 
